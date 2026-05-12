@@ -1,0 +1,6 @@
+{
+  "name": "review-skill",
+  "skills": [
+    "./skills/review-code"
+  ]
+}
