@@ -35,7 +35,7 @@ Apply these in order — the first two are the most critical:
 | 4 | Property & Method Access | Null dereferences — see [CHECKLIST.md](CHECKLIST.md#4-property--method-access-errors) |
 | 5 | Async & Concurrency | Race conditions, leaks — see [CHECKLIST.md](CHECKLIST.md#5-async--concurrency-bugs) |
 | 6 | Placeholder & Stub Code | Incomplete implementations — see [CHECKLIST.md](CHECKLIST.md#6-placeholder--stub-code) |
-| 7 | Language-Specific Gaps | Type system holes — see [LANGUAGE-SPECIFIC.md](LANGUAGE-SPECIFIC.md) |
+| 7 | Language-Specific Gaps | Type system holes + AI-specific errors — see [LANGUAGE-SPECIFIC.md](LANGUAGE-SPECIFIC.md) |
 
 ## Rules
 
