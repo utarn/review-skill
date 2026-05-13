@@ -71,6 +71,11 @@ Both are heavily structured, object-oriented languages with massive enterprise f
 - Integer division when float was intended
 - Generic type erasure causing runtime ClassCastException
 
+**C# Entity Framework — Missing migrations:**
+- **Entity changes without migration**: When entity classes (properties added/removed/renamed, new entities, relationship changes) are modified but no corresponding EF Core migration has been created. Check that for every change to files under `Entities/`, `Models/`, or `Domain/` there is a matching migration file under `Migrations/`. Run `dotnet ef migrations list` and compare the latest migration snapshot against the current entity definitions. A missing migration will cause runtime `InvalidOperationException` or schema mismatch errors at startup or during database operations.
+- **Orphaned migrations**: Migrations that have been created but never applied to the database (`dotnet ef migrations list` shows pending migrations). These accumulate and can cause conflicts when new migrations are added on top.
+- **Model snapshot drift**: The `Migrations/{ContextName}ModelSnapshot.cs` file should match the sum of all applied migrations. If it's out of sync (e.g., manually edited), `dotnet ef migrations add` will generate incorrect migrations.
+
 ## Go (Golang)
 
 Go is minimalist, but its specific approach to concurrency and errors trips up AI models.

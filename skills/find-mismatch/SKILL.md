@@ -1,14 +1,14 @@
 ---
-name: review-code
+name: find-mismatch
 description: >
   Systematic code review focused on finding real bugs — cross-boundary contract mismatches,
   logic errors, async bugs, and runtime failures. Use when reviewing AI-generated code,
   reviewing a PR, auditing a codebase for bugs, or when user says "review this code",
-  "find bugs", "check for issues", or "review-code".
+  "find bugs", "check for issues", or "find-mismatch".
 disable-model-invocation: true
 ---
 
-# Review Code
+# Find Mismatch
 
 Systematic bug detection for AI-generated or any codebase. Finds things that **will break at runtime** — not style issues, not hypotheticals.
 

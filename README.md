@@ -12,12 +12,12 @@ npx skills@latest add utarn/review-skill
 
 | Skill | Description |
 |-------|-------------|
-| [review-code](skills/review-code/SKILL.md) | Systematic bug detection — finds cross-boundary mismatches, serialization gaps, logic bugs, async bugs, and stub code |
+| [find-mismatch](skills/find-mismatch/SKILL.md) | Systematic bug detection — finds cross-boundary mismatches, serialization gaps, logic bugs, async bugs, and stub code |
 | [work-on-issues](skills/work-on-issues/SKILL.md) | Fetch issues from GitHub or GitLab, implement them, and close completed tickets |
 
-## review-code
+## find-mismatch
 
-`/review-code` performs systematic bug detection across your entire codebase:
+`/find-mismatch` performs systematic bug detection across your entire codebase:
 
 - **Cross-boundary contract mismatches** — function names, parameter names/types, return types
 - **Serialization gaps** — casing mismatches, optional vs required fields, encoding layers
@@ -32,7 +32,7 @@ npx skills@latest add utarn/review-skill
 In your AI agent (Claude Code, etc.):
 
 ```
-/review-code
+/find-mismatch
 ```
 
 Then specify files or directories to review, or let it scan the whole project.
@@ -64,7 +64,7 @@ review-skill/
 ├── .claude-plugin/
 │   └── plugin.json
 ├── skills/
-│   ├── review-code/
+│   ├── find-mismatch/
 │   │   ├── SKILL.md              # Main instructions
 │   │   ├── CHECKLIST.md          # Detailed checklist
 │   │   ├── LANGUAGE-SPECIFIC.md  # Per-language checks

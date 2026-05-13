@@ -1,7 +1,7 @@
 {
   "name": "review-skill",
   "skills": [
-    "./skills/review-code",
+    "./skills/find-mismatch",
     "./skills/work-on-issues"
   ]
 }
