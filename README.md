@@ -1,6 +1,6 @@
 # review-skill
 
-A code review skill for AI coding agents. Finds real bugs — not style issues.
+A code review skill and issue workflow skill for AI coding agents.
 
 ## Install
 
@@ -8,7 +8,14 @@ A code review skill for AI coding agents. Finds real bugs — not style issues.
 npx skills@latest add utarn/review-skill
 ```
 
-## What it does
+## Skills
+
+| Skill | Description |
+|-------|-------------|
+| [review-code](skills/review-code/SKILL.md) | Systematic bug detection — finds cross-boundary mismatches, serialization gaps, logic bugs, async bugs, and stub code |
+| [work-on-issues](skills/work-on-issues/SKILL.md) | Fetch issues from GitHub or GitLab, implement them, and close completed tickets |
+
+## review-code
 
 `/review-code` performs systematic bug detection across your entire codebase:
 
@@ -20,7 +27,7 @@ npx skills@latest add utarn/review-skill
 - **Placeholder & stub code** — unused results, TODOs, dead imports
 - **Language-specific checks** — type system gaps per language
 
-## Usage
+### Usage
 
 In your AI agent (Claude Code, etc.):
 
@@ -29,6 +36,24 @@ In your AI agent (Claude Code, etc.):
 ```
 
 Then specify files or directories to review, or let it scan the whole project.
+
+## work-on-issues
+
+`/work-on-issues` fetches open issues from GitHub or GitLab, lets you pick which to work on, implements the work, and closes completed tickets.
+
+### Usage
+
+In your AI agent:
+
+```
+/work-on-issues
+```
+
+It will:
+1. Detect the tracker (GitHub via `gh` or GitLab via `glab`) from your remotes
+2. List open issues for you to pick from
+3. Label, branch, implement, commit, and create a PR/MR
+4. Comment on the issue and close it when merged
 
 ## Skill format
 
@@ -39,20 +64,15 @@ review-skill/
 ├── .claude-plugin/
 │   └── plugin.json
 ├── skills/
-│   └── review-code/
-│       ├── SKILL.md              # Main instructions
-│       ├── CHECKLIST.md          # Detailed checklist
-│       ├── LANGUAGE-SPECIFIC.md  # Per-language checks
-│       └── OUTPUT-FORMAT.md      # Reporting format
+│   ├── review-code/
+│   │   ├── SKILL.md              # Main instructions
+│   │   ├── CHECKLIST.md          # Detailed checklist
+│   │   ├── LANGUAGE-SPECIFIC.md  # Per-language checks
+│   │   └── OUTPUT-FORMAT.md      # Reporting format
+│   └── work-on-issues/
+│       └── SKILL.md              # Issue workflow instructions
 └── README.md
 ```
-
-## Skills
-
-| Skill | Description |
-|-------|-------------|
-| [review-code](skills/review-code/SKILL.md) | Systematic bug detection — finds cross-boundary mismatches, serialization gaps, logic bugs, async bugs, and stub code |
-| [work-on-issues](skills/work-on-issues/SKILL.md) | Fetch issues from GitHub or GitLab, implement them, and close completed tickets |
 
 ## License
 
