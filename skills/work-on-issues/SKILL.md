@@ -1,14 +1,14 @@
 ---
 name: work-on-issues
 description: >
-  Fetch issues from GitHub or GitLab, work on them systematically, and move completed issues to closed.
   Use when the user says "work on issues", "fetch issues", "pick up an issue", "start working on",
-  or wants to triage and implement tickets from the issue tracker.
+  or wants to triage and implement tickets from the issue tracker. Dispatches a dedicated sub agent
+  per issue for a clean context, and parallelizes independent subtasks within each issue.
 ---
 
 # Work on Issues
 
-Fetch issues from the configured tracker (GitHub or GitLab), pick up work, implement it, and close completed issues.
+Fetch issues from the configured tracker (GitHub or GitLab), pick up work, implement it, and close completed issues. Each issue is handled by a dedicated sub agent so every agent starts with a clear, focused context. Within each issue, independent subtasks are parallelized across multiple sub agents.
 
 ## Detecting the Tracker
 
@@ -51,9 +51,25 @@ When commands are structurally identical, use `$TRACKER` as a shortcut. When the
 
 2. **Parse & present** — summarize each issue: number, title, labels, brief description. Present the list to the user.
 
-3. **Let the user pick** — ask which issue(s) to work on, or suggest based on labels/priority.
+3. **Let the user pick** — present the issue list with these options:
+   - Pick a specific issue number to work on
+   - Pick an issue and say **"from here onwards"** / **"this and all remaining"** to work iteratively through that issue and every open issue after it, stopping only when no issues remain or the user interrupts
+   - Suggest based on labels/priority if the user is unsure
 
-4. **Read the full issue** — load details and comments:
+   When "onwards" mode is selected, the orchestrator loops: dispatch sub agent for the chosen issue → complete Phase 2–3 → automatically move to the next open issue → repeat until the list is exhausted. The user can pause or stop between issues.
+
+4. **Check issue state** — before reading the full issue, verify it's still open. If it's already closed, skip it and move to the next one. No point implementing a resolved issue.
+
+   ```bash
+   # GitHub
+   gh issue view <number> --json state
+   # GitLab
+   glab issue view <number> -F json --jq '.state'
+   ```
+
+   If state is `closed` / `CLOSED`, skip to next issue.
+
+5. **Read the full issue** — load details and comments:
 
    ```bash
    # GitHub
@@ -64,7 +80,7 @@ When commands are structurally identical, use `$TRACKER` as a shortcut. When the
 
    Use `-F json` for machine-readable output when parsing is needed.
 
-5. **Assign / label** — mark the issue as in-progress if the tracker supports it:
+6. **Assign / label** — mark the issue as in-progress if the tracker supports it:
 
    ```bash
    # GitHub
@@ -73,19 +89,50 @@ When commands are structurally identical, use `$TRACKER` as a shortcut. When the
    glab issue update <number> --label "in-progress"
    ```
 
-### Phase 2: Implement
+### Phase 2: Implement (Sub Agent Per Issue)
 
-6. **Create a branch** — use the issue number in the branch name:
+**Every issue gets its own sub agent.** This gives each agent a clean, focused context — no pollution from previous issues, no accumulated baggage. The orchestrator (you) coordinates; the sub agent executes.
+
+7. **Create a branch** — use the issue number in the branch name:
 
    ```bash
    git checkout -b work-on-issue-<number>
    ```
 
-7. **Implement the work** — follow the issue description, acceptance criteria, and any linked specs.
+8. **Dispatch a sub agent** to implement the issue. Construct the prompt with everything the agent needs:
 
-8. **Verify** — run tests, lint, build. Use [verification-before-completion](../verification-before-completion/SKILL.md) if available.
+   ```markdown
+   You are implementing issue #<number>: <title>.
 
-9. **Commit** — reference the issue in the commit message:
+   ## Issue Description
+   <paste full issue body and acceptance criteria>
+
+   ## Branch
+   work-on-issue-<number> (already checked out)
+
+   ## Constraints
+   - Follow the issue description and acceptance criteria exactly
+   - Do NOT modify files unrelated to this issue
+   - Run tests, lint, and build after implementation
+   - Commit with message: "fix: resolve #<number> — <short description>"
+
+   ## Subtask Parallelization
+   Before implementing, analyze whether the issue contains independent subtasks that can run in parallel (see Subtask Parallelization section below). If so, dispatch parallel sub agents for non-blocking subtasks.
+
+   ## Output
+   Return a summary of: what you implemented, what tests you ran, and the commit hash.
+   ```
+
+   Use the `Agent` tool with `subagent_type: "full-stack-engineer"` for implementation work. The sub agent starts fresh — no context from other issues or prior conversations.
+
+   **Red Flags — do NOT do these yourself instead of dispatching:**
+   - "This issue is too small for a sub agent" → Small issues benefit even more from clean context
+   - "I already understand the codebase" → Understanding ≠ best implementation; fresh eyes catch things
+   - "Dispatching is overhead" — The sub agent's clean context prevents cross-issue mistakes
+
+9. **Verify** — after the sub agent returns, run verification yourself. Use [verification-before-completion](../verification-before-completion/SKILL.md) if available. Do NOT trust the sub agent's "all tests pass" claim — run the commands and confirm output.
+
+10. **Commit** — the sub agent should commit. If it didn't, commit with:
 
    ```bash
    git commit -m "fix: resolve #<number> — <description>"
@@ -93,7 +140,7 @@ When commands are structurally identical, use `$TRACKER` as a shortcut. When the
 
 ### Phase 3: Submit & Close
 
-10. **Create a PR/MR**:
+11. **Create a PR/MR**:
 
     ```bash
     # GitHub
@@ -102,7 +149,7 @@ When commands are structurally identical, use `$TRACKER` as a shortcut. When the
     glab mr create --title "Fix #<number>: <title>" --description "Closes #<number>"
     ```
 
-11. **Post a summary comment** on the issue:
+12. **Post a summary comment** on the issue:
 
     ```bash
     # GitHub
@@ -111,7 +158,7 @@ When commands are structurally identical, use `$TRACKER` as a shortcut. When the
     glab issue note <number> --message "Implementation complete. MR: <url>"
     ```
 
-12. **After merge** — close the issue (if not auto-closed by the PR/MR):
+13. **After merge** — close the issue (if not auto-closed by the PR/MR):
 
     For GitLab, `glab issue close` does not accept a closing comment, so post first then close:
     ```bash
@@ -123,26 +170,145 @@ When commands are structurally identical, use `$TRACKER` as a shortcut. When the
     gh issue close <number> --comment "Resolved in PR <number>"
     ```
 
-13. **Clean up branch**:
+14. **Clean up branch**:
 
     ```bash
     git branch -d work-on-issue-<number>
     ```
+
+## Subtask Parallelization Within an Issue
+
+Before implementing, the sub agent (or orchestrator) should analyze the issue for independent subtasks.
+
+### When to Parallelize
+
+```dot
+digraph subtask_parallel {
+    "Analyze issue" [shape=box];
+    "Multiple subtasks?" [shape=diamond];
+    "Independent?" [shape=diamond];
+    "Shared files?" [shape=diamond];
+    "Sequential" [shape=box];
+    "Parallel dispatch" [shape=box];
+
+    "Analyze issue" -> "Multiple subtasks?";
+    "Multiple subtasks?" -> "Independent?" [label="yes"];
+    "Multiple subtasks?" -> "Sequential" [label="no — single task"];
+    "Independent?" -> "Shared files?" [label="yes"];
+    "Independent?" -> "Sequential" [label="no — depends on other subtasks"];
+    "Shared files?" -> "Parallel dispatch" [label="no — different files/dirs"];
+    "Shared files?" -> "Sequential" [label="yes — would conflict"];
+}
+```
+
+**Parallelize when:**
+- Issue touches multiple files or directories that don't depend on each other
+- Subtask A's output is not required as input for subtask B
+- Example: "Add validation to form AND update API error messages" — these are independent
+
+**Keep sequential when:**
+- Subtasks share the same files (agents would conflict)
+- One subtask's output feeds into the next (e.g., write model, then write migration)
+- Order matters (e.g., refactor first, then add feature on top)
+
+### How to Dispatch Parallel Subtasks
+
+When the sub agent identifies parallelizable subtasks, it dispatches child agents:
+
+1. **Decompose** — break the issue into subtasks with clear boundaries:
+
+   ```markdown
+   Issue #42: "Add user profile page and email notifications"
+
+   Subtask A: User profile page (files: src/pages/Profile.tsx, src/api/profile.ts)
+   Subtask B: Email notifications (files: src/services/email.ts, src/templates/)
+   → Independent, no shared files → PARALLEL
+   ```
+
+2. **Dispatch** — use the Agent tool with `subagent_type: "full-stack-engineer"` for each subtask in a **single message** (parallel dispatch):
+
+   ```
+   Agent A: "Implement the user profile page for issue #42..."
+   Agent B: "Implement email notifications for issue #42..."
+   ```
+
+3. **Constrain each sub agent** — specify exact file/directory boundaries to prevent conflicts:
+
+   ```markdown
+   ## Your Scope
+   Files you MAY modify: src/services/email.ts, src/templates/
+   Files you MUST NOT modify: src/pages/, src/api/profile.ts (another agent is working on these)
+
+   ## Deliverable
+   Implement [specific subtask]. Run relevant tests. Return summary of changes.
+   ```
+
+4. **Integrate** — after all parallel sub agents return, verify no conflicts and run the full test suite.
+
+### Subtask Prompt Template
+
+```markdown
+You are implementing a subtask of issue #<number>: <title>.
+
+## Subtask: <specific subtask description>
+
+## Scope
+- Files you MAY modify: <list>
+- Files you MUST NOT modify: <list> (another agent is handling these)
+
+## Requirements
+<paste relevant acceptance criteria for this subtask only>
+
+## Verification
+Run tests relevant to your subtask. Return:
+1. What you implemented
+2. Files modified
+3. Test results
+```
 
 ## Batch Mode
 
 When the user wants to work through multiple issues:
 
 1. Fetch the full open list (Phase 1).
-2. For each issue, run Phases 2–3 sequentially.
-3. Between issues, check with the user before proceeding to the next.
+2. **Dispatch one sub agent per issue** (Phase 2). Issues are dependent — run them one at a time, sequentially. Each issue must complete and merge before the next starts, since later issues may depend on changes from earlier ones. However, once the sub agent breaks the issue into a todo list, independent todo items within that issue CAN be parallelized.
+3. Between issues, check with the user before proceeding to the next batch.
 4. Maintain a summary table:
 
-   | Issue | Title | Status | PR/MR |
-   |-------|-------|--------|-------|
-   | #12 | Fix login bug | ✅ Closed | !34 |
-   | #15 | Add export | 🔄 In Progress | !36 |
-   | #18 | Update docs | ⏳ Pending | — |
+   | Issue | Title | Agent | Status | PR/MR |
+   |-------|-------|-------|--------|-------|
+   | #12 | Fix login bug | Agent-1 | ✅ Closed | !34 |
+   | #15 | Add export | Agent-2 | 🔄 In Progress | !36 |
+   | #18 | Update docs | Agent-3 | ⏳ Pending | — |
+
+### Iterative Onwards Mode
+
+When the user picks "issue X onwards", the orchestrator enters a sequential iterative loop — one issue at a time:
+
+```
+Fetch open issues → Pick starting issue → Loop:
+  1. Check if issue is still open — if closed, skip it and move to next
+  2. Dispatch sub agent for current issue (Phase 2)
+  3. Sub agent breaks issue into todo items; parallelizes independent items
+  4. Complete submit & close (Phase 3)
+  5. Re-fetch open issues to get updated list
+  6. If more issues remain → brief user on next issue, proceed
+  7. If no issues remain → stop
+```
+
+**Loop behavior:**
+- **Skip closed issues** — before dispatching a sub agent, check the issue state. If it's already closed, skip it immediately and move to the next one. No sub agent needed.
+- Only one issue is active at a time — wait for it to fully complete before starting the next
+- Between each issue, give the user a one-line status update and a chance to pause/stop
+- If the user says "stop" or "skip" at any point, break out of the loop
+- Re-fetch the issue list after each completion — new issues may have been filed, others closed
+- Continue until the list is exhausted or the user interrupts
+
+### Sequential Issue Execution
+
+Issues are always processed one at a time. The sub agent for issue N must finish and merge before issue N+1 starts. Later issues often depend on code or schema changes introduced by earlier ones.
+
+**Parallelism happens at the todo-item level within a single issue**, not across issues. See the Subtask Parallelization section for how to identify and dispatch parallel todo items.
 
 ## Label Conventions
 
