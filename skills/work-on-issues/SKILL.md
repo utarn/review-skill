@@ -41,12 +41,15 @@ When commands are structurally identical, use `$TRACKER` as a shortcut. When the
 1. **List open issues** — fetch in machine-readable format:
 
    ```bash
-   $TRACKER issue list --state open -F json
+   # GitHub
+   gh issue list --state open -F json
+   # GitLab — lists open issues by default, no --state flag
+   glab issue list -F json
    ```
 
    For GitLab with label filtering:
    ```bash
-   glab issue list --state open --label "bug" -F json
+   glab issue list --label "bug" -F json
    ```
 
 2. **Parse & present** — summarize each issue: number, title, labels, brief description. Present the list to the user.
