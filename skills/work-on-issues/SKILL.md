@@ -8,7 +8,7 @@ description: >
 
 # Work on Issues
 
-Fetch issues from the configured tracker (GitHub or GitLab), pick up work, implement it, and close completed issues. Each issue is handled by a dedicated sub agent so every agent starts with a clear, focused context. Within each issue, independent subtasks are parallelized across multiple sub agents.
+Fetch issues from the configured tracker (GitHub or GitLab), pick up work, implement it, and close completed issues. Each issue is handled by a dedicated sub agent so every agent starts with a clear, focused context. Within each issue, independent subtasks are parallelized across multiple sub agents. Every sub agent automatically runs [find-mismatch](../find-mismatch/SKILL.md) after implementation — bugs are fixed immediately without prompting for confirmation.
 
 ## Detecting the Tracker
 
@@ -122,18 +122,32 @@ When commands are structurally identical, use `$TRACKER` as a shortcut. When the
    ## Subtask Parallelization
    Before implementing, analyze whether the issue contains independent subtasks that can run in parallel (see Subtask Parallelization section below). If so, dispatch parallel sub agents for non-blocking subtasks.
 
+   ## Post-Implementation: Find-Mismatch Review (Automatic)
+   After implementation is complete and tests pass, you MUST run a find-mismatch review on all files you modified or created:
+
+   1. **Run the find-mismatch skill** — invoke it via the Skill tool with skill name "find-mismatch"
+   2. **Scope the review** — review only the files you changed (the diff). Do NOT review the entire codebase.
+   3. **Automatically accept and fix** — for every real bug found:
+      - Apply the fix immediately without asking for confirmation
+      - Do NOT report bugs without fixing them — fix first, report fixes in your output
+      - If a finding is uncertain or a false positive, skip it (only fix confirmed bugs)
+   4. **Re-run tests** — after applying all fixes, re-run the test suite to confirm nothing broke
+   5. **Proceed** — do not stop or wait for approval; continue to commit
+
+   This step is mandatory and automatic. Do not skip it, do not ask whether to proceed, and do not present findings without also fixing them.
+
    ## Output
-   Return a summary of: what you implemented, what tests you ran, and the commit hash.
+   Return a summary of: what you implemented, what find-mismatch fixes were applied, what tests you ran, and the commit hash.
    ```
 
-   Use the `Agent` tool with `subagent_type: "full-stack-engineer"` for implementation work. The sub agent starts fresh — no context from other issues or prior conversations.
+   Use the `Agent` tool with `subagent_type: "full-stack-engineer"` for implementation work. The sub agent starts fresh — no context from other issues or prior conversations. The sub agent prompt includes instructions to automatically run find-mismatch after implementation and fix any bugs found.
 
    **Red Flags — do NOT do these yourself instead of dispatching:**
    - "This issue is too small for a sub agent" → Small issues benefit even more from clean context
    - "I already understand the codebase" → Understanding ≠ best implementation; fresh eyes catch things
    - "Dispatching is overhead" — The sub agent's clean context prevents cross-issue mistakes
 
-9. **Verify** — after the sub agent returns, run verification yourself. Use [verification-before-completion](../verification-before-completion/SKILL.md) if available. Do NOT trust the sub agent's "all tests pass" claim — run the commands and confirm output.
+9. **Verify** — after the sub agent returns, run verification yourself. Use [verification-before-completion](../verification-before-completion/SKILL.md) if available. Do NOT trust the sub agent's "all tests pass" claim — run the commands and confirm output. The sub agent's find-mismatch fixes are included in its commit; verify the diff looks correct.
 
 10. **Commit** — the sub agent should commit. If it didn't, commit with:
 
@@ -262,11 +276,21 @@ You are implementing a subtask of issue #<number>: <title>.
 ## Requirements
 <paste relevant acceptance criteria for this subtask only>
 
+## Post-Implementation: Find-Mismatch Review (Automatic)
+After your implementation is complete, you MUST run a find-mismatch review on the files you modified:
+
+1. **Run the find-mismatch skill** — invoke it via the Skill tool with skill name "find-mismatch"
+2. **Scope the review** — review only the files within your scope that you changed
+3. **Automatically accept and fix** — fix every confirmed bug immediately without asking for confirmation
+4. **Re-run tests** — confirm fixes don't break anything
+5. **Proceed** — do not stop or wait for approval
+
 ## Verification
 Run tests relevant to your subtask. Return:
 1. What you implemented
-2. Files modified
-3. Test results
+2. Find-mismatch fixes applied (if any)
+3. Files modified
+4. Test results
 ```
 
 ## Batch Mode
