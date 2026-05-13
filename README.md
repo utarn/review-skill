@@ -47,6 +47,13 @@ review-skill/
 └── README.md
 ```
 
+## Skills
+
+| Skill | Description |
+|-------|-------------|
+| [review-code](skills/review-code/SKILL.md) | Systematic bug detection — finds cross-boundary mismatches, serialization gaps, logic bugs, async bugs, and stub code |
+| [work-on-issues](skills/work-on-issues/SKILL.md) | Fetch issues from GitHub or GitLab, implement them, and close completed tickets |
+
 ## License
 
 MIT
