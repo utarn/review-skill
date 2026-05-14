@@ -175,16 +175,21 @@ When commands are structurally identical, use `$TRACKER` as a shortcut. When the
     glab issue note <number> --message "Implementation complete. MR: <url>"
     ```
 
-13. **After merge** — close the issue (if not auto-closed by the PR/MR):
+13. **After merge** — update labels and close the issue (if not auto-closed by the PR/MR):
 
-    For GitLab, `glab issue close` does not accept a closing comment, so post first then close:
+    Remove `needs-triage` and `in-progress` labels, add `ai-agent-closed`, then close:
+
     ```bash
-    # GitLab — post explanation then close
+    # GitHub
+    gh issue edit <number> --remove-label "needs-triage,in-progress" --add-label "ai-agent-closed"
+    gh issue close <number> --comment "Resolved in PR <number>"
+
+    # GitLab — remove labels via API, then add new label and close
+    PROJECT_ID=$(glab repo view -F json --jq '.id')
+    glab api "projects/$PROJECT_ID/issues/$NUMBER" --method PUT --field "remove_labels=needs-triage,in-progress"
+    glab issue update <number> --label "ai-agent-closed"
     glab issue note <number> --message "Resolved in MR <number>"
     glab issue close <number>
-
-    # GitHub
-    gh issue close <number> --comment "Resolved in PR <number>"
     ```
 
 14. **Clean up branch**:
@@ -344,6 +349,7 @@ Issues are always processed one at a time. The sub agent for issue N must finish
 | `in-progress` | Currently being worked on | `#E4E669` |
 | `ready-for-review` | Implementation done, awaiting merge | `#0E8A16` |
 | `blocked` | Cannot proceed (needs info, dependency, etc.) | `#D93F0B` |
+| `ai-agent-closed` | Issue closed by AI agent | `#5319E7` |
 
 Apply/remove as the issue moves through states.
 
@@ -358,7 +364,7 @@ gh label create "in-progress" --color "#E4E669" --description "Currently being w
 glab label create --name "in-progress" --color "#E4E669" --description "Currently being worked on"
 ```
 
-Use the same pattern for `ready-for-review` (`#0E8A16`) and `blocked` (`#D93F0B`).
+Use the same pattern for `ready-for-review` (`#0E8A16`), `blocked` (`#D93F0B`), and `ai-agent-closed` (`#5319E7`).
 
 **Shortcut:** wrap label application in a helper — try to apply, and if the CLI reports "not found", create it first then retry:
 
