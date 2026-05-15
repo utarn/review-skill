@@ -41,8 +41,8 @@ When commands are structurally identical, use `$TRACKER` as a shortcut. When the
 1. **List open issues** — fetch in machine-readable format:
 
    ```bash
-   # GitHub
-   gh issue list --state open -F json
+   # GitHub — use --json for machine-readable output (NOT -F json, that flag does not exist in gh)
+   gh issue list --repo <repo> --state open --json number,title,labels
    # GitLab — lists open issues by default, no --state flag
    glab issue list -F json
    ```
@@ -65,7 +65,7 @@ When commands are structurally identical, use `$TRACKER` as a shortcut. When the
 
    ```bash
    # GitHub
-   gh issue view <number> --json state
+   gh issue view <number> --repo <repo> --json state
    # GitLab
    glab issue view <number> -F json --jq '.state'
    ```
@@ -76,20 +76,20 @@ When commands are structurally identical, use `$TRACKER` as a shortcut. When the
 
    ```bash
    # GitHub
-   gh issue view <number> --comments
+   gh issue view <number> --repo <repo> --comments
    # GitLab
    glab issue view <number> --comments
    ```
 
-   Use `-F json` for machine-readable output when parsing is needed.
+   For machine-readable output: GitHub uses `--json <fields>`, GitLab uses `-F json`.
 
 6. **Assign / label** — mark the issue as in-progress if the tracker supports it:
 
    ```bash
    # GitHub
-   gh issue edit <number> --add-label "in-progress"
+   gh issue edit <number> --repo <repo> --add-label "in-progress" --remove-label "needs-triage"
    # GitLab
-   glab issue update <number> --label "in-progress"
+   glab issue update <number> --label "in-progress" --remove-label "needs-triage"
    ```
 
 ### Phase 2: Implement (Sub Agent Per Issue)
@@ -161,7 +161,7 @@ When commands are structurally identical, use `$TRACKER` as a shortcut. When the
 
     ```bash
     # GitHub
-    gh pr create --title "Fix #<number>: <title>" --body "Closes #<number>"
+    gh pr create --repo <repo> --title "Fix #<number>: <title>" --body "Closes #<number>"
     # GitLab
     glab mr create --title "Fix #<number>: <title>" --description "Closes #<number>"
     ```
@@ -170,23 +170,23 @@ When commands are structurally identical, use `$TRACKER` as a shortcut. When the
 
     ```bash
     # GitHub
-    gh issue comment <number> --body "Implementation complete. PR: <url>"
+    gh issue comment <number> --repo <repo> --body "Implementation complete. PR: <url>"
     # GitLab
     glab issue note <number> --message "Implementation complete. MR: <url>"
     ```
 
-13. **After merge** — update labels and close the issue (if not auto-closed by the PR/MR):
+13. **After merge** — update labels and close the issue. GitHub PRs with "Closes #<number>" in the body auto-close on merge, but do not rely on that — always explicitly close:
 
-    Remove `needs-triage` and `in-progress` labels, add `ai-agent-closed`, then close:
+    Remove `needs-triage`, `in-progress`, and `ready-for-agent` labels, add `ai-agent-closed`, then close:
 
     ```bash
-    # GitHub
-    gh issue edit <number> --remove-label "needs-triage,in-progress" --add-label "ai-agent-closed"
-    gh issue close <number> --comment "Resolved in PR <number>"
+    # GitHub — explicitly close the issue (do NOT rely on PR auto-close)
+    gh issue edit <number> --repo <repo> --remove-label "needs-triage,in-progress,ready-for-agent" --add-label "ai-agent-closed"
+    gh issue close <number> --repo <repo> --comment "Resolved in PR <number>"
 
     # GitLab — remove labels via API, then add new label and close
     PROJECT_ID=$(glab repo view -F json --jq '.id')
-    glab api "projects/$PROJECT_ID/issues/$NUMBER" --method PUT --field "remove_labels=needs-triage,in-progress"
+    glab api "projects/$PROJECT_ID/issues/$NUMBER" --method PUT --field "remove_labels=needs-triage,in-progress,ready-for-agent"
     glab issue update <number> --label "ai-agent-closed"
     glab issue note <number> --message "Resolved in MR <number>"
     glab issue close <number>
@@ -359,7 +359,7 @@ If a label does not exist, create it before applying:
 
 ```bash
 # GitHub
-gh label create "in-progress" --color "#E4E669" --description "Currently being worked on"
+gh label create "in-progress" --repo <repo> --color "#E4E669" --description "Currently being worked on"
 # GitLab
 glab label create --name "in-progress" --color "#E4E669" --description "Currently being worked on"
 ```
@@ -370,9 +370,9 @@ Use the same pattern for `ready-for-review` (`#0E8A16`), `blocked` (`#D93F0B`), 
 
 ```bash
 # GitHub helper pattern
-gh issue edit <number> --add-label "in-progress" || \
-  (gh label create "in-progress" --color "#E4E669" --description "Currently being worked on" && \
-   gh issue edit <number> --add-label "in-progress")
+gh issue edit <number> --repo <repo> --add-label "in-progress" || \
+  (gh label create "in-progress" --repo <repo> --color "#E4E669" --description "Currently being worked on" && \
+   gh issue edit <number> --repo <repo> --add-label "in-progress")
 
 # GitLab helper pattern
 glab issue update <number> --label "in-progress" || \
