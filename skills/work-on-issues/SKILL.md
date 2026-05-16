@@ -89,7 +89,7 @@ When commands are structurally identical, use `$TRACKER` as a shortcut. When the
    # GitHub
    gh issue edit <number> --repo <repo> --add-label "in-progress" --remove-label "needs-triage"
    # GitLab
-   glab issue update <number> --label "in-progress" --remove-label "needs-triage"
+   glab issue update <number> --label "in-progress" --unlabel "needs-triage"
    ```
 
 ### Phase 2: Implement (Sub Agent Per Issue)
@@ -184,9 +184,8 @@ When commands are structurally identical, use `$TRACKER` as a shortcut. When the
     gh issue edit <number> --repo <repo> --remove-label "needs-triage,in-progress,ready-for-agent" --add-label "ai-agent-closed"
     gh issue close <number> --repo <repo> --comment "Resolved in PR <number>"
 
-    # GitLab — remove labels via API, then add new label and close
-    PROJECT_ID=$(glab repo view -F json --jq '.id')
-    glab api "projects/$PROJECT_ID/issues/$NUMBER" --method PUT --field "remove_labels=needs-triage,in-progress,ready-for-agent"
+    # GitLab — remove old labels, add new label, then close
+    glab issue update <number> --unlabel "needs-triage,in-progress,ready-for-agent"
     glab issue update <number> --label "ai-agent-closed"
     glab issue note <number> --message "Resolved in MR <number>"
     glab issue close <number>
