@@ -166,7 +166,16 @@ When commands are structurally identical, use `$TRACKER` as a shortcut. When the
     glab mr create --title "Fix #<number>: <title>" --description "Closes #<number>"
     ```
 
-12. **Post a summary comment** on the issue:
+12. **Auto-merge the PR/MR** — merge immediately after creation:
+
+    ```bash
+    # GitHub
+    gh pr merge <number> --repo <repo> --squash --delete-branch
+    # GitLab
+    glab mr merge <number> --squash --remove-source-branch
+    ```
+
+13. **Post a summary comment** on the issue:
 
     ```bash
     # GitHub
@@ -175,7 +184,7 @@ When commands are structurally identical, use `$TRACKER` as a shortcut. When the
     glab issue note <number> --message "Implementation complete. MR: <url>"
     ```
 
-13. **After merge** — update labels and close the issue. GitHub PRs with "Closes #<number>" in the body auto-close on merge, but do not rely on that — always explicitly close:
+14. **Update labels and close the issue**. GitHub PRs with "Closes #<number>" in the body auto-close on merge, but do not rely on that — always explicitly close:
 
     Remove `needs-triage`, `in-progress`, and `ready-for-agent` labels, add `ai-agent-closed`, then close:
 
@@ -191,7 +200,7 @@ When commands are structurally identical, use `$TRACKER` as a shortcut. When the
     glab issue close <number>
     ```
 
-14. **Clean up branch**:
+15. **Clean up branch**:
 
     ```bash
     git branch -d work-on-issue-<number>
