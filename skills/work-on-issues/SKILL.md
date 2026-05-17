@@ -4,6 +4,7 @@ description: >
   Use when the user says "work on issues", "fetch issues", "pick up an issue", "start working on",
   or wants to triage and implement tickets from the issue tracker. Dispatches a dedicated sub agent
   per issue for a clean context, and parallelizes independent subtasks within each issue.
+  In "onwards" mode, continuously re-fetches and processes new issues until the tracker is empty.
 ---
 
 # Work on Issues
@@ -72,7 +73,24 @@ When commands are structurally identical, use `$TRACKER` as a shortcut. When the
 
    If state is `closed` / `CLOSED`, skip to next issue.
 
-5. **Read the full issue** — load details and comments:
+5. **Detect PRD (parent) issues** — if an issue has the `PRD` label OR its title starts with `PRD:`, it is a **parent issue** that tracks sub-issues rather than containing implementation work itself. **Skip it** — do not dispatch a sub agent for it. Continue to the next issue in the list. Track the PRD issue number for later auto-close (see PRD Auto-Close below).
+
+   ```bash
+   # GitHub — check PRD label or title prefix
+   PRD_BY_LABEL=$(gh issue view <number> --repo <repo> --json labels --jq '.labels[].name' | grep -q "^PRD$" && echo "yes" || echo "no")
+   PRD_BY_TITLE=$(gh issue view <number> --repo <repo> --json title --jq '.title' | grep -q "^PRD:" && echo "yes" || echo "no")
+
+   # GitLab — check PRD label or title prefix
+   PRD_BY_LABEL=$(glab issue view <number> -F json --jq '.labels[].name' | grep -q "^PRD$" && echo "yes" || echo "no")
+   PRD_BY_TITLE=$(glab issue view <number> -F json --jq '.title' | grep -q "^PRD:" && echo "yes" || echo "no")
+   ```
+
+   If the issue is a PRD (by label or title):
+   - **Do NOT implement it** — skip to the next issue
+   - **Record its number** in a `PRD_TRACKER` list for auto-close checks
+   - Present it to the user as: `#<number> [PRD] <title> (parent — skipping, sub-issues will be worked on)`
+
+6. **Read the full issue** — load details and comments:
 
    ```bash
    # GitHub
@@ -83,7 +101,7 @@ When commands are structurally identical, use `$TRACKER` as a shortcut. When the
 
    For machine-readable output: GitHub uses `--json <fields>`, GitLab uses `-F json`.
 
-6. **Assign / label** — mark the issue as in-progress if the tracker supports it:
+7. **Assign / label** — mark the issue as in-progress if the tracker supports it:
 
    ```bash
    # GitHub
@@ -92,17 +110,88 @@ When commands are structurally identical, use `$TRACKER` as a shortcut. When the
    glab issue update <number> --label "in-progress" --unlabel "needs-triage"
    ```
 
+### Dependency Detection & Formal Linking
+
+When working on a range of issues, build a **dependency graph** so the orchestrator can dispatch unblocked issues in parallel. Dependencies come from two sources:
+
+1. **Issue body `## Blocked by` section** — each issue's description may contain a `## Blocked by` heading followed by links to blocking issues. Parse these to determine which issues must complete before others can start.
+
+2. **Formal tracker links** — convert text-only references into native tracker relationships so the dependency graph shows up in GitLab/GitHub boards and UI.
+
+#### Parsing Blocked-By from Issue Bodies
+
+After fetching issues, parse each issue body for the `## Blocked by` section:
+
+```bash
+# GitHub — get issue body
+gh issue view <number> --repo <repo> --json body --jq '.body'
+
+# GitLab — get issue body
+glab issue view <number> -F json --jq '.description'
+```
+
+Extract issue references from the `## Blocked by` section. References may appear as:
+- `#42` — shorthand issue reference
+- `https://github.com/owner/repo/issues/42` — full URL
+- `https://gitlab.com/owner/repo/-/issues/42` — full URL
+
+Build a **`DEPS` map** in memory:
+
+```
+DEPS = {
+  #42: [],              # no blockers — can start immediately
+  #43: [42],            # blocked by #42
+  #44: [42],            # blocked by #42
+  #45: [43, 44],        # blocked by both #43 and #44
+}
+```
+
+#### Setting Formal Tracker Links
+
+After parsing, convert text references into formal tracker relationships so dependencies are visible in the tracker UI.
+
+**GitLab** — use the REST API to create `is_blocked_by` links:
+
+```bash
+# Get project ID (needed for API calls)
+PROJECT_ID=$(curl -s --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+  "https://gitlab.com/api/v4/projects/$(echo $REPO_PATH | sed 's/\//%2F/g')" | jq '.id')
+
+# Create a formal "is blocked by" link
+curl -s --request POST \
+  --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+  --header "Content-Type: application/json" \
+  --data "{\"target_project_id\": $PROJECT_ID, \"target_issue_iid\": <blocker-number>, \"link_type\": \"is_blocked_by\"}" \
+  "https://gitlab.com/api/v4/projects/$PROJECT_ID/issues/<blocked-number>/links"
+```
+
+**GitHub** — use the REST API to create sub-issue links (GitHub's native dependency feature):
+
+```bash
+# GitHub — link a blocking issue via the sub-issues API
+gh api repos/<owner>/<repo>/issues/<blocked-number>/sub_issues \
+  --method POST \
+  --field sub_issue_id=$(gh issue view <blocker-number> --repo <repo> --json id --jq '.id') \
+  --field blocked_by=true
+```
+
+If the tracker API does not support formal links (or the CLI doesn't expose them), the text references in the issue body serve as the fallback — the orchestrator still uses the parsed `DEPS` map for parallelization regardless.
+
+#### PRD Title Detection
+
+A **PRD** issue is identified by its title starting with `PRD:` (e.g., `PRD: User Authentication System`). This is a parent/epic issue that aggregates sub-issues. Do not implement PRDs — skip them and work on their sub-issues instead.
+
 ### Phase 2: Implement (Sub Agent Per Issue)
 
 **Every issue gets its own sub agent.** This gives each agent a clean, focused context — no pollution from previous issues, no accumulated baggage. The orchestrator (you) coordinates; the sub agent executes.
 
-7. **Create a branch** — use the issue number in the branch name:
+8. **Create a branch** — use the issue number in the branch name:
 
    ```bash
    git checkout -b work-on-issue-<number>
    ```
 
-8. **Dispatch a sub agent** to implement the issue. Construct the prompt with everything the agent needs:
+9. **Dispatch a sub agent** to implement the issue. Construct the prompt with everything the agent needs:
 
    ```markdown
    You are implementing issue #<number>: <title>.
@@ -147,9 +236,9 @@ When commands are structurally identical, use `$TRACKER` as a shortcut. When the
    - "I already understand the codebase" → Understanding ≠ best implementation; fresh eyes catch things
    - "Dispatching is overhead" — The sub agent's clean context prevents cross-issue mistakes
 
-9. **Verify** — after the sub agent returns, run verification yourself. Use [verification-before-completion](../verification-before-completion/SKILL.md) if available. Do NOT trust the sub agent's "all tests pass" claim — run the commands and confirm output. The sub agent's find-mismatch fixes are included in its commit; verify the diff looks correct.
+10. **Verify** — after the sub agent returns, run verification yourself. Use [verification-before-completion](../verification-before-completion/SKILL.md) if available. Do NOT trust the sub agent's "all tests pass" claim — run the commands and confirm output. The sub agent's find-mismatch fixes are included in its commit; verify the diff looks correct.
 
-10. **Commit** — the sub agent should commit. If it didn't, commit with:
+11. **Commit** — the sub agent should commit. If it didn't, commit with:
 
    ```bash
    git commit -m "fix: resolve #<number> — <description>"
@@ -157,7 +246,7 @@ When commands are structurally identical, use `$TRACKER` as a shortcut. When the
 
 ### Phase 3: Submit & Close
 
-11. **Create a PR/MR**:
+12. **Create a PR/MR**:
 
     ```bash
     # GitHub
@@ -166,7 +255,7 @@ When commands are structurally identical, use `$TRACKER` as a shortcut. When the
     glab mr create --title "Fix #<number>: <title>" --description "Closes #<number>"
     ```
 
-12. **Auto-merge the PR/MR** — merge immediately after creation:
+13. **Auto-merge the PR/MR** — merge immediately after creation:
 
     ```bash
     # GitHub
@@ -175,7 +264,7 @@ When commands are structurally identical, use `$TRACKER` as a shortcut. When the
     glab mr merge <number> --squash --remove-source-branch
     ```
 
-13. **Post a summary comment** on the issue:
+14. **Post a summary comment** on the issue:
 
     ```bash
     # GitHub
@@ -184,7 +273,7 @@ When commands are structurally identical, use `$TRACKER` as a shortcut. When the
     glab issue note <number> --message "Implementation complete. MR: <url>"
     ```
 
-14. **Update labels and close the issue**. GitHub PRs with "Closes #<number>" in the body auto-close on merge, but do not rely on that — always explicitly close:
+15. **Update labels and close the issue**. GitHub PRs with "Closes #<number>" in the body auto-close on merge, but do not rely on that — always explicitly close:
 
     Remove `needs-triage`, `in-progress`, and `ready-for-agent` labels, add `ai-agent-closed`, then close:
 
@@ -200,11 +289,61 @@ When commands are structurally identical, use `$TRACKER` as a shortcut. When the
     glab issue close <number>
     ```
 
-15. **Clean up branch**:
+16. **Clean up branch**:
 
     ```bash
     git branch -d work-on-issue-<number>
     ```
+
+### PRD Auto-Close
+
+After closing a sub-issue, check whether any tracked PRD (parent) issues can be auto-closed. A PRD issue is ready to close when **all of its sub-issues are closed**.
+
+17. **After closing a sub-issue**, check each PRD in `PRD_TRACKER`:
+
+    ```bash
+    # GitHub — list sub-issues linked to the PRD (issues referenced in the body or via tracker links)
+    gh issue view <prd-number> --repo <repo> --json body --jq '.body'
+
+    # GitLab
+    glab issue view <prd-number> -F json --jq '.description'
+    ```
+
+    Parse the PRD body for referenced issue numbers (e.g., `#42`, `#43`, `#44` or `/`-prefixed links). Then check the state of each:
+
+    ```bash
+    # GitHub — check state of a referenced issue
+    gh issue view <sub-issue-number> --repo <repo> --json state --jq '.state'
+
+    # GitLab
+    glab issue view <sub-issue-number> -F json --jq '.state'
+    ```
+
+18. **If all sub-issues are closed**, close the PRD:
+
+    ```bash
+    # GitHub
+    gh issue edit <prd-number> --repo <repo> --remove-label "needs-triage,in-progress,ready-for-agent" --add-label "ai-agent-closed"
+    gh issue close <prd-number> --repo <repo> --comment "All sub-issues resolved. Closing PRD."
+
+    # GitLab
+    glab issue update <prd-number> --unlabel "needs-triage,in-progress,ready-for-agent"
+    glab issue update <prd-number> --label "ai-agent-closed"
+    glab issue note <prd-number> --message "All sub-issues resolved. Closing PRD."
+    glab issue close <prd-number>
+    ```
+
+    Remove the PRD from `PRD_TRACKER` after closing it.
+
+**Sub-issue discovery:** If the PRD body does not explicitly list sub-issue numbers, discover them by looking for issues that reference the PRD number in their body or title:
+
+```bash
+# GitHub — search for issues referencing the PRD
+gh issue list --repo <repo> --state all --search "#<prd-number>" --json number,title,state
+
+# GitLab — search for issues referencing the PRD
+glab issue list --all --search "#<prd-number>" -F json
+```
 
 ## Subtask Parallelization Within an Issue
 
@@ -311,49 +450,143 @@ Run tests relevant to your subtask. Return:
 When the user wants to work through multiple issues:
 
 1. Fetch the full open list (Phase 1).
-2. **Dispatch one sub agent per issue** (Phase 2). Issues are dependent — run them one at a time, sequentially. Each issue must complete and merge before the next starts, since later issues may depend on changes from earlier ones. However, once the sub agent breaks the issue into a todo list, independent todo items within that issue CAN be parallelized.
-3. Between issues, check with the user before proceeding to the next batch.
-4. Maintain a summary table:
+2. **Build the dependency graph** — parse `## Blocked by` sections from all issue bodies (see Dependency Detection & Formal Linking). Build the `DEPS` map and `PRD_TRACKER` list.
+3. **Set formal tracker links** — convert text-only blocked-by references into native GitLab/GitHub relationships.
+4. **Dispatch issues using dependency-aware scheduling** (see below).
+5. Between waves, check with the user before proceeding.
+6. Maintain a summary table:
 
-   | Issue | Title | Agent | Status | PR/MR |
-   |-------|-------|-------|--------|-------|
-   | #12 | Fix login bug | Agent-1 | ✅ Closed | !34 |
-   | #15 | Add export | Agent-2 | 🔄 In Progress | !36 |
-   | #18 | Update docs | Agent-3 | ⏳ Pending | — |
+   | Issue | Title | Blocked By | Agent | Status | PR/MR |
+   |-------|-------|------------|-------|--------|-------|
+   | #12 | Setup DB schema | — | Agent-1 | ✅ Closed | !34 |
+   | #13 | Add API routes | — | Agent-2 | ✅ Closed | !35 |
+   | #14 | Add auth middleware | #12, #13 | Agent-3 | 🔄 In Progress | — |
+   | #15 | Add UI login page | #13 | Agent-4 | 🔄 In Progress | — |
+   | #16 | Integration tests | #14, #15 | ⏳ Pending | — |
+
+### Dependency-Aware Parallel Dispatch
+
+Instead of running all issues strictly sequentially, the orchestrator uses the `DEPS` map to maximize parallelism:
+
+```
+Build DEPS map from all issue bodies → Loop:
+  1. Find all issues with zero unresolved blockers (DEPS[issue] is empty OR all blockers are closed)
+  2. Dispatch a sub agent for each unblocked issue IN PARALLEL (single message with multiple Agent calls)
+     - Each agent gets its own branch: work-on-issue-<number>
+     - Each agent is constrained to its issue scope
+  3. Wait for all dispatched agents to complete
+  4. For each completed agent: verify, create PR/MR, merge, close issue, clean up branch
+  5. PRD auto-close check — check if any PRD in PRD_TRACKER has all sub-issues closed
+  6. Re-evaluate DEPS — issues whose blockers are now all closed become unblocked
+  7. If any unblocked issues remain → dispatch next wave (go to step 2)
+  8. If no unblocked issues remain AND unresolved issues exist → blocked, report to user
+  9. If all issues are closed → done
+```
+
+**Wave example:**
+
+```
+DEPS = { #12: [], #13: [], #14: [#12, #13], #15: [#13], #16: [#14, #15] }
+
+Wave 1: #12 and #13 have no blockers → dispatch both in parallel
+  → #12 completes, #13 completes
+
+Wave 2: #14 (was blocked by #12,#13 — now unblocked) and #15 (was blocked by #13 — now unblocked) → dispatch both in parallel
+  → #14 completes, #15 completes
+
+Wave 3: #16 (was blocked by #14,#15 — now unblocked) → dispatch
+  → #16 completes
+
+All done. Check PRD auto-close.
+```
+
+**Important constraints for parallel issue dispatch:**
+- **Each issue MUST have its own git branch** — agents must not share branches. Use `work-on-issue-<number>` for each.
+- **Merge conflicts** — if two parallel agents modify the same files, the second to merge will conflict. The orchestrator must handle this: merge the first, then rebase/resolve the second before merging.
+- **Shared code conflicts** — if two issues likely touch the same files, keep them sequential even if the DEPS map says they're parallel. Check the issue descriptions for file overlap before dispatching in parallel.
+- **Maximum parallelism** — dispatch at most 3-4 issues in parallel to avoid resource exhaustion and merge conflicts.
 
 ### Iterative Onwards Mode
 
-When the user picks "issue X onwards", the orchestrator enters a sequential iterative loop — one issue at a time:
+When the user picks "issue X onwards", the orchestrator enters a **continuous outer loop** — it keeps processing issues and re-fetching until the tracker is empty or the user stops. New issues filed during work are automatically picked up in the next refresh.
 
 ```
-Fetch open issues → Pick starting issue → Loop:
-  1. Check if issue is still open — if closed, skip it and move to next
-  2. Dispatch sub agent for current issue (Phase 2)
-  3. Sub agent breaks issue into todo items; parallelizes independent items
-  4. Complete submit & close (Phase 3)
-  5. Re-fetch open issues to get updated list
-  6. If more issues remain → brief user on next issue, proceed
-  7. If no issues remain → stop
+OUTER LOOP (never stops until tracker is empty or user says stop):
+
+  1. Fetch ALL open issues from tracker
+  2. If no open issues exist → report "All issues resolved" → STOP
+  3. Filter to issues >= starting number (honour "onwards")
+  4. Build PRD_TRACKER from PRD-titled/labeled issues
+  5. Parse all issue bodies → Build DEPS map
+  6. Set formal tracker links (if not already linked)
+
+  INNER LOOP (wave-based dispatch):
+    a. Find all unblocked issues (DEPS empty or all blockers closed)
+    b. Skip closed issues, skip PRDs
+    c. If no unblocked issues remain AND unresolved issues exist → report blockers → break to user
+    d. If no issues remain at all → break inner loop
+    e. Dispatch sub agents for all unblocked issues IN PARALLEL
+    f. Each sub agent: implement, find-mismatch, commit
+    g. For each completed agent: verify, create PR/MR, merge, close issue, clean up branch
+    h. PRD auto-close check
+    i. Re-evaluate DEPS → back to step (a)
+
+  7. Inner loop done → brief user: "Wave complete. Re-fetching open issues..."
+  8. Go back to step 1 (OUTER LOOP re-fetches everything)
 ```
 
 **Loop behavior:**
-- **Skip closed issues** — before dispatching a sub agent, check the issue state. If it's already closed, skip it immediately and move to the next one. No sub agent needed.
-- Only one issue is active at a time — wait for it to fully complete before starting the next
-- Between each issue, give the user a one-line status update and a chance to pause/stop
-- If the user says "stop" or "skip" at any point, break out of the loop
-- Re-fetch the issue list after each completion — new issues may have been filed, others closed
-- Continue until the list is exhausted or the user interrupts
+- **Continuous refresh** — after every wave completes and all tracked issues are closed, the orchestrator re-fetches the full open issue list. If new issues have been filed (by teammates, CI, or other agents), they are automatically picked up and processed.
+- **Never stops early** — the loop only exits when the tracker returns zero open issues OR the user says "stop". It does NOT stop just because the initially-fetched batch is done.
+- **Skip closed issues** — before dispatching a sub agent, check the issue state. If it's already closed, skip it immediately.
+- **Skip PRD (parent) issues** — if an issue's title starts with `PRD:` or has the `PRD` label, record it in `PRD_TRACKER` and skip.
+- **Auto-close PRDs** — after each sub-issue is closed, check every PRD in `PRD_TRACKER` to see if all its sub-issues are now closed. If they are, close the PRD automatically.
+- **Parallel dispatch within waves** — all issues with resolved blockers are dispatched simultaneously in a single message with multiple Agent tool calls.
+- **Respect dependency order** — never dispatch an issue whose blockers are still open. Wait for the blocking wave to complete first.
+- Between waves, give the user a status update and a chance to pause/stop.
+- If the user says "stop" or "skip" at any point, break out of the loop.
+- **Onwards range** — the `>= starting number` filter is re-applied on each outer loop refresh, so newly filed issues with numbers >= the starting issue are included.
 
-### Sequential Issue Execution
+#### Refresh Query
 
-Issues are always processed one at a time. The sub agent for issue N must finish and merge before issue N+1 starts. Later issues often depend on code or schema changes introduced by earlier ones.
+After each outer loop iteration, re-fetch all open issues:
 
-**Parallelism happens at the todo-item level within a single issue**, not across issues. See the Subtask Parallelization section for how to identify and dispatch parallel todo items.
+```bash
+# GitHub — re-fetch all open issues
+gh issue list --repo <repo> --state open --json number,title,labels
+
+# GitLab — re-fetch all open issues
+glab issue list -F json
+```
+
+If the result is empty → announce "All issues resolved. No open issues remaining." → exit.
+If the result contains new issues → announce "Found N new open issues" → continue inner loop.
+
+### Handling Merge Conflicts in Parallel Dispatch
+
+When parallel issues modify overlapping files, merge conflicts are inevitable. Handle them:
+
+1. **Detect overlap before dispatch** — if two issues likely touch the same files, run them sequentially instead of in parallel, even if they have no formal blocked-by relationship.
+2. **First merge wins** — merge the first completing agent's PR/MR. For subsequent agents on the same base:
+   ```bash
+   git checkout main && git pull
+   git checkout work-on-issue-<number>
+   git rebase main
+   # Resolve conflicts manually or via sub agent
+   git rebase --continue
+   git push --force-with-lease origin work-on-issue-<number>
+   ```
+3. **If rebase is too complex** — ask the user whether to resolve manually or skip the issue.
+
+### Single Issue Mode
+
+When the user picks a single issue (not a range), run it solo — no dependency parsing needed, no parallel dispatch across issues. Subtask parallelization within that single issue still applies.
 
 ## Label Conventions
 
 | Label | Meaning | Default Color |
 |-------|---------|---------------|
+| `PRD` | Parent issue — tracks sub-issues, not implementation work | `#0075CA` |
 | `in-progress` | Currently being worked on | `#E4E669` |
 | `ready-for-review` | Implementation done, awaiting merge | `#0E8A16` |
 | `blocked` | Cannot proceed (needs info, dependency, etc.) | `#D93F0B` |
@@ -372,7 +605,7 @@ gh label create "in-progress" --repo <repo> --color "#E4E669" --description "Cur
 glab label create --name "in-progress" --color "#E4E669" --description "Currently being worked on"
 ```
 
-Use the same pattern for `ready-for-review` (`#0E8A16`), `blocked` (`#D93F0B`), and `ai-agent-closed` (`#5319E7`).
+Use the same pattern for `PRD` (`#0075CA`), `ready-for-review` (`#0E8A16`), `blocked` (`#D93F0B`), and `ai-agent-closed` (`#5319E7`).
 
 **Shortcut:** wrap label application in a helper — try to apply, and if the CLI reports "not found", create it first then retry:
 
@@ -395,3 +628,8 @@ glab issue update <number> --label "in-progress" || \
 - **Issue already assigned** — skip the assignment step.
 - **Issue needs clarification** — comment/note on the issue asking for details, then pause implementation.
 - **Partially done** — if an issue is too large, break it into sub-issues or a checklist and track progress in a comment/note.
+- **No `## Blocked by` section** — treat the issue as having no blockers (empty DEPS entry). It can be dispatched immediately in any wave.
+- **Circular dependency** — if the DEPS map contains a cycle (e.g., A blocked by B, B blocked by A), report it to the user and skip both issues. Do not attempt to dispatch.
+- **External blocker** — if a blocked-by reference points to an issue outside the selected range, check its state. If it's already closed, ignore it. If it's open, treat it as an unresolved blocker.
+- **Formal link API failure** — if setting native tracker links fails, fall back to text-only references. The DEPS map still works for parallelization.
+- **Merge conflict in parallel wave** — see Handling Merge Conflicts in Parallel Dispatch above.
