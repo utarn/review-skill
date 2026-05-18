@@ -45,12 +45,12 @@ When commands are structurally identical, use `$TRACKER` as a shortcut. When the
    # GitHub — use --json for machine-readable output (NOT -F json, that flag does not exist in gh)
    gh issue list --repo <repo> --state open --json number,title,labels
    # GitLab — lists open issues by default, no --state flag
-   glab issue list -F json
+   glab issue list -O json
    ```
 
    For GitLab with label filtering:
    ```bash
-   glab issue list --label "bug" -F json
+   glab issue list --label "bug" -O json
    ```
 
 2. **Parse & present** — summarize each issue: number, title, labels, brief description. Present the list to the user.
@@ -68,7 +68,7 @@ When commands are structurally identical, use `$TRACKER` as a shortcut. When the
    # GitHub
    gh issue view <number> --repo <repo> --json state
    # GitLab
-   glab issue view <number> -F json --jq '.state'
+   glab issue view <number> -F json | jq -r '.state'
    ```
 
    If state is `closed` / `CLOSED`, skip to next issue.
@@ -81,8 +81,8 @@ When commands are structurally identical, use `$TRACKER` as a shortcut. When the
    PRD_BY_TITLE=$(gh issue view <number> --repo <repo> --json title --jq '.title' | grep -q "^PRD:" && echo "yes" || echo "no")
 
    # GitLab — check PRD label or title prefix
-   PRD_BY_LABEL=$(glab issue view <number> -F json --jq '.labels[].name' | grep -q "^PRD$" && echo "yes" || echo "no")
-   PRD_BY_TITLE=$(glab issue view <number> -F json --jq '.title' | grep -q "^PRD:" && echo "yes" || echo "no")
+   PRD_BY_LABEL=$(glab issue view <number> -F json | jq -r '.labels[].name' | grep -q "^PRD$" && echo "yes" || echo "no")
+   PRD_BY_TITLE=$(glab issue view <number> -F json | jq -r '.title' | grep -q "^PRD:" && echo "yes" || echo "no")
    ```
 
    If the issue is a PRD (by label or title):
@@ -127,7 +127,7 @@ After fetching issues, parse each issue body for the `## Blocked by` section:
 gh issue view <number> --repo <repo> --json body --jq '.body'
 
 # GitLab — get issue body
-glab issue view <number> -F json --jq '.description'
+glab issue view <number> -F json | jq -r '.description'
 ```
 
 Extract issue references from the `## Blocked by` section. References may appear as:
@@ -306,7 +306,7 @@ After closing a sub-issue, check whether any tracked PRD (parent) issues can be 
     gh issue view <prd-number> --repo <repo> --json body --jq '.body'
 
     # GitLab
-    glab issue view <prd-number> -F json --jq '.description'
+    glab issue view <prd-number> -F json | jq -r '.description'
     ```
 
     Parse the PRD body for referenced issue numbers (e.g., `#42`, `#43`, `#44` or `/`-prefixed links). Then check the state of each:
@@ -316,7 +316,7 @@ After closing a sub-issue, check whether any tracked PRD (parent) issues can be 
     gh issue view <sub-issue-number> --repo <repo> --json state --jq '.state'
 
     # GitLab
-    glab issue view <sub-issue-number> -F json --jq '.state'
+    glab issue view <sub-issue-number> -F json | jq -r '.state'
     ```
 
 18. **If all sub-issues are closed**, close the PRD:
@@ -342,7 +342,7 @@ After closing a sub-issue, check whether any tracked PRD (parent) issues can be 
 gh issue list --repo <repo> --state all --search "#<prd-number>" --json number,title,state
 
 # GitLab — search for issues referencing the PRD
-glab issue list --all --search "#<prd-number>" -F json
+glab issue list --all --search "#<prd-number>" -O json
 ```
 
 ## Subtask Parallelization Within an Issue
@@ -556,7 +556,7 @@ After each outer loop iteration, re-fetch all open issues:
 gh issue list --repo <repo> --state open --json number,title,labels
 
 # GitLab — re-fetch all open issues
-glab issue list -F json
+glab issue list -O json
 ```
 
 If the result is empty → announce "All issues resolved. No open issues remaining." → exit.
