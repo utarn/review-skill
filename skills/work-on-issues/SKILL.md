@@ -588,6 +588,7 @@ When the user picks a single issue (not a range), run it solo — no dependency 
 |-------|---------|---------------|
 | `PRD` | Parent issue — tracks sub-issues, not implementation work | `#0075CA` |
 | `in-progress` | Currently being worked on | `#E4E669` |
+| `ready-for-agent` | Issue is ready for autonomous agent implementation | `#0E8A16` |
 | `ready-for-review` | Implementation done, awaiting merge | `#0E8A16` |
 | `blocked` | Cannot proceed (needs info, dependency, etc.) | `#D93F0B` |
 | `ai-agent-closed` | Issue closed by AI agent | `#5319E7` |
@@ -605,7 +606,7 @@ gh label create "in-progress" --repo <repo> --color "#E4E669" --description "Cur
 glab label create --name "in-progress" --color "#E4E669" --description "Currently being worked on"
 ```
 
-Use the same pattern for `PRD` (`#0075CA`), `ready-for-review` (`#0E8A16`), `blocked` (`#D93F0B`), and `ai-agent-closed` (`#5319E7`).
+Use the same pattern for `PRD` (`#0075CA`), `ready-for-agent` (`#0E8A16`), `ready-for-review` (`#0E8A16`), `blocked` (`#D93F0B`), and `ai-agent-closed` (`#5319E7`).
 
 **Shortcut:** wrap label application in a helper — try to apply, and if the CLI reports "not found", create it first then retry:
 
