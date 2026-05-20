@@ -34,8 +34,9 @@ Apply these in order — the first two are the most critical:
 | 3 | Logic Bugs | Wrong results — see [CHECKLIST.md](CHECKLIST.md#3-logic-bugs) |
 | 4 | Property & Method Access | Null dereferences — see [CHECKLIST.md](CHECKLIST.md#4-property--method-access-errors) |
 | 5 | Async & Concurrency | Race conditions, leaks — see [CHECKLIST.md](CHECKLIST.md#5-async--concurrency-bugs) |
-| 6 | Placeholder & Stub Code | Incomplete implementations — see [CHECKLIST.md](CHECKLIST.md#6-placeholder--stub-code) |
-| 7 | Language-Specific Gaps | Type system holes + AI-specific errors — see [LANGUAGE-SPECIFIC.md](LANGUAGE-SPECIFIC.md) |
+| 6 | CSS & Styling Mismatches | Silent transparent/invisible rendering — see [CHECKLIST.md](CHECKLIST.md#6-css--styling-mismatches) |
+| 7 | Placeholder & Stub Code | Incomplete implementations — see [CHECKLIST.md](CHECKLIST.md#7-placeholder--stub-code) |
+| 8 | Language-Specific Gaps | Type system holes + AI-specific errors — see [LANGUAGE-SPECIFIC.md](LANGUAGE-SPECIFIC.md) |
 
 ## Rules
 

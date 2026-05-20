@@ -95,3 +95,16 @@ Go is minimalist, but its specific approach to concurrency and errors trips up A
 - Loose type comparisons: `==` vs `===` (`"0" == false` is true)
 - Array vs object access confusion (`$arr->prop` vs `$arr['prop']`)
 - Undefined array key access without null coalescing (`??`)
+
+## CSS / Tailwind
+
+CSS never throws errors — invalid values are silently ignored, making bugs invisible until visual inspection.
+
+**Ecosystem / AI-specific:**
+- **Tailwind v3→v4 color value breaking change**: Tailwind v3 wrapped raw HSL components (`0 0% 100%`) in `hsl()` at build time. Tailwind v4 passes values through as-is. Theme files generated for v3 (or by tools like tweakcn/shadcn) output raw HSL components that produce `transparent` in v4. Check every `--color-*` variable in theme files for valid CSS color functions.
+- **Theme generator assumptions**: AI and theme generators often output `--color-primary: 217 91% 60%` (raw HSL). This is invalid CSS unless a framework wraps it. Verify that CSS custom properties used as color values resolve to actual colors, not space-separated numbers.
+
+**Core language:**
+- **Invalid color values**: `background-color: 0 0% 100%` is silently ignored (falls back to `transparent`). Only `hsl(0 0% 100%)` or `rgb(0 0 0)` etc. are valid.
+- **`@theme inline` with `var()` references**: The pattern `--color-X: var(--color-X)` in `@theme inline` generates utilities that pass through the variable value. If that value isn't a valid CSS color, the utility silently fails. Verify resolved values, not just variable names.
+- **Multi-theme selector mismatch**: Theme CSS uses `[data-theme="X"]` selectors but JavaScript sets a different attribute, class, or variant name. Verify the attribute name and values match between CSS and JS.

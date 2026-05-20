@@ -43,7 +43,17 @@ The most critical category — these silently fail at runtime.
 - **Cancellation token checked too late**: Cancel flag checked at top of loop but expensive operation inside doesn't check it.
 - **Resource leaks**: File handles, database connections, HTTP clients opened but not closed in error paths.
 
-## 6. Placeholder & Stub Code
+## 6. CSS & Styling Mismatches
+
+These produce no build errors and no console errors — CSS silently ignores invalid values, falling back to defaults (usually `transparent` or `inherit`).
+
+- **Invalid CSS custom property values**: CSS variable resolved to raw components that aren't a valid CSS value. Example: `--color-background: 0 0% 100%` (raw HSL numbers) instead of `--color-background: hsl(0 0% 100%)`. Check that every `--color-*` variable used in `background-color`, `color`, `border-color`, etc. resolves to a valid CSS color (`hsl()`, `oklch()`, `rgb()`, hex, named color). Raw HSL components like `217 91% 60%` are **not** valid CSS colors — only `hsl(217 91% 60%)` is.
+- **Framework version color wrapping changes**: Tailwind v3 wrapped raw HSL components in `hsl()` at build time. Tailwind v4 does **not**. Theme files generated for v3 (or by tools like tweakcn/shadcn) may output raw HSL components that break in v4. When reviewing theme files in a Tailwind v4 project, verify all color values use a valid CSS color function.
+- **`@theme inline` circular references**: `--color-background: var(--color-background)` in `@theme inline` is valid **only if** the actual value (from themes.css or similar) is a valid CSS color. If the resolved value is raw components (e.g., `0 0% 100%`), the generated utility `background-color: var(--color-background)` will resolve to an invalid value and the browser falls back to `transparent`.
+- **Theme selector mismatch**: CSS custom properties defined under `[data-theme="X"]` but JavaScript sets `data-theme` to a different value, or the attribute name doesn't match (e.g., `data-theme` vs `class="theme-X"`).
+- **CSS property silence**: CSS never throws — it silently ignores invalid values. If a color utility produces no visible effect, check `getComputedStyle(element).backgroundColor`. `rgba(0, 0, 0, 0)` = transparent (broken), `rgb(R, G, B)` = working.
+
+## 7. Placeholder & Stub Code
 
 - **Functions that build something but never use it**: Constructs a map/list/object but never calls the function that would use it (e.g., builds a label map but never calls `create_label()`).
 - **TODO/FIXME/placeholder values**: Hardcoded strings like `"NEW_"`, `"placeholder"`, empty catch blocks, `// TODO: implement`.
