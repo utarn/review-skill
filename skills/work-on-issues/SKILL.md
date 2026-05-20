@@ -189,10 +189,21 @@ A **PRD** issue is identified by its title starting with `PRD:` (e.g., `PRD: Use
 
 **One main issue is processed at a time.** The orchestrator picks the next unblocked main issue, dispatches a sub agent for it, waits for completion, then moves to the next. This gives each main issue a clean, focused context. Within that main issue, independent subtasks may be parallelized (see Subtask Parallelization below).
 
-9. **Create a branch** — use the main issue number in the branch name:
+9. **Create a worktree** — create an isolated git worktree in `.claude/worktrees/` with a dedicated branch:
 
    ```bash
-   git checkout -b work-on-issue-<number>
+   # Ensure the worktrees directory exists
+   mkdir -p .claude/worktrees
+
+   # Create worktree with a new branch
+   git worktree add .claude/worktrees/issue-<number> -b work-on-issue-<number>
+   ```
+
+   Then copy environment files into the worktree so the sub agent has access to secrets/config:
+
+   ```bash
+   # Copy .env and .env.* files to the worktree (skip if none exist)
+   for f in .env .env.*; do [ -f "$f" ] && cp "$f" .claude/worktrees/issue-<number>/; done
    ```
 
 10. **Dispatch a sub agent** to implement the main issue. Construct the prompt with everything the agent needs:
@@ -203,8 +214,10 @@ A **PRD** issue is identified by its title starting with `PRD:` (e.g., `PRD: Use
    ## Issue Description
    <paste full issue body and acceptance criteria>
 
-   ## Branch
-   work-on-issue-<number> (already checked out)
+   ## Working Directory
+   You are working in a git worktree at `.claude/worktrees/issue-<number>`.
+   Branch `work-on-issue-<number>` is already checked out in that directory.
+   All file operations (reads, edits, tests) must target paths inside this worktree.
 
    ## Constraints
    - Follow the issue description and acceptance criteria exactly
@@ -233,7 +246,7 @@ A **PRD** issue is identified by its title starting with `PRD:` (e.g., `PRD: Use
    Return a summary of: what you implemented, what find-mismatch fixes were applied, what tests you ran, and the commit hash.
    ```
 
-   Use the `Agent` tool with `subagent_type: "full-stack-engineer"` for implementation work. The sub agent starts fresh — no context from other issues or prior conversations. The sub agent prompt includes instructions to automatically run find-mismatch after implementation and fix any bugs found.
+   Use the `Agent` tool with `subagent_type: "full-stack-engineer"` for implementation work. The sub agent starts fresh — no context from other issues or prior conversations. The sub agent prompt includes instructions to automatically run find-mismatch after implementation and fix any bugs found. **The sub agent works inside the worktree directory** (`.claude/worktrees/issue-<number>`), not the main working tree.
 
    **Red Flags — do NOT do these yourself instead of dispatching:**
    - "This issue is too small for a sub agent" → Small issues benefit even more from clean context
@@ -242,10 +255,10 @@ A **PRD** issue is identified by its title starting with `PRD:` (e.g., `PRD: Use
 
 11. **Verify** — after the sub agent returns, run verification yourself. Use [verification-before-completion](../verification-before-completion/SKILL.md) if available. Do NOT trust the sub agent's "all tests pass" claim — run the commands and confirm output. The sub agent's find-mismatch fixes are included in its commit; verify the diff looks correct.
 
-12. **Commit** — the sub agent should commit. If it didn't, commit with:
+12. **Commit** — the sub agent should commit inside the worktree. If it didn't, commit from the worktree directory:
 
    ```bash
-   git commit -m "fix: resolve #<number> — <description>"
+   cd .claude/worktrees/issue-<number> && git commit -m "fix: resolve #<number> — <description>"
    ```
 
 ### Phase 3: Submit & Close
@@ -293,9 +306,13 @@ A **PRD** issue is identified by its title starting with `PRD:` (e.g., `PRD: Use
     glab issue close <number>
     ```
 
-17. **Clean up branch**:
+17. **Clean up worktree and branch**:
 
     ```bash
+    # Remove the worktree
+    git worktree remove .claude/worktrees/issue-<number>
+
+    # Delete the branch
     git branch -d work-on-issue-<number>
     ```
 
@@ -480,7 +497,7 @@ Build DEPS map from main issue bodies → Loop:
   2. If no unblocked main issues remain AND unresolved main issues exist → report blockers → break to user
   3. If all main issues are closed → done
   4. Dispatch a single sub agent for the selected main issue
-     - Agent gets its own branch: work-on-issue-<number>
+     - Agent gets its own worktree: .claude/worktrees/issue-<number> with branch work-on-issue-<number>
      - Within this issue, the sub agent may parallelize independent subtasks (see Subtask Parallelization)
   5. Wait for the sub agent to complete
   6. Verify, create PR/MR, merge, close issue, clean up branch
@@ -534,7 +551,7 @@ OUTER LOOP (never stops until tracker is empty or user says stop):
     d. If no main issues remain at all → break inner loop
     e. Dispatch ONE sub agent for the selected main issue
     f. Sub agent: implement (may parallelize subtasks internally), find-mismatch, commit
-    g. Verify, create PR/MR, merge, close issue, clean up branch
+    g. Verify, create PR/MR, merge, close issue, clean up worktree and branch
     h. PRD auto-close check
     i. Re-evaluate DEPS → back to step (a)
 
