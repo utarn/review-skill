@@ -2,14 +2,15 @@
 name: work-on-issues
 description: >
   Use when the user says "work on issues", "fetch issues", "pick up an issue", "start working on",
-  or wants to triage and implement tickets from the issue tracker. Dispatches a dedicated sub agent
-  per issue for a clean context, and parallelizes independent subtasks within each issue.
-  In "onwards" mode, continuously re-fetches and processes new issues until the tracker is empty.
+  or wants to triage and implement tickets from the issue tracker. Only processes main issues
+  (titled PRD: or feat:) one at a time. Dispatches parallel sub agents for independent subtasks
+  within each main issue. In "onwards" mode, continuously re-fetches and processes new main issues
+  until the tracker is empty.
 ---
 
 # Work on Issues
 
-Fetch issues from the configured tracker (GitHub or GitLab), pick up work, implement it, and close completed issues. Each issue is handled by a dedicated sub agent so every agent starts with a clear, focused context. Within each issue, independent subtasks are parallelized across multiple sub agents. Every sub agent automatically runs [find-mismatch](../find-mismatch/SKILL.md) after implementation — bugs are fixed immediately without prompting for confirmation.
+Fetch issues from the configured tracker (GitHub or GitLab), pick up work, implement it, and close completed issues. **Only main issues (titles starting with `PRD:` or `feat:`) are processed as top-level work units — one at a time, sequentially.** Other issues (e.g., `bug:`, `chore:`, unlabeled) are skipped at the top level. Within each main issue, independent subtasks are parallelized across multiple sub agents. Every sub agent automatically runs [find-mismatch](../find-mismatch/SKILL.md) after implementation — bugs are fixed immediately without prompting for confirmation.
 
 ## Detecting the Tracker
 
@@ -53,16 +54,20 @@ When commands are structurally identical, use `$TRACKER` as a shortcut. When the
    glab issue list --label "bug" -O json
    ```
 
-2. **Parse & present** — summarize each issue: number, title, labels, brief description. Present the list to the user.
+2. **Filter for main issues only** — from the full list, keep only issues whose title starts with `PRD:` or `feat:`. These are the **main issues** that qualify for top-level processing. All other issues (e.g., `bug:`, `chore:`, `fix:`, or un-prefixed) are filtered out and **not presented as pickable work items**. Show the user only the filtered main issue list.
 
-3. **Let the user pick** — present the issue list with these options:
-   - Pick a specific issue number to work on
-   - Pick an issue and say **"from here onwards"** / **"this and all remaining"** to work iteratively through that issue and every open issue after it, stopping only when no issues remain or the user interrupts
+3. **Parse & present** — summarize each main issue: number, title, labels, brief description. Present the filtered list to the user.
+
+4. **Let the user pick** — present the main issue list with these options:
+   - Pick a specific main issue number to work on
+   - Pick an issue and say **"from here onwards"** / **"this and all remaining"** to work iteratively through that main issue and every remaining main issue after it, stopping only when no main issues remain or the user interrupts
    - Suggest based on labels/priority if the user is unsure
 
-   When "onwards" mode is selected, the orchestrator loops: dispatch sub agent for the chosen issue → complete Phase 2–3 → automatically move to the next open issue → repeat until the list is exhausted. The user can pause or stop between issues.
+   When "onwards" mode is selected, the orchestrator loops: dispatch sub agent for the chosen main issue → complete Phase 2–3 → automatically move to the next main issue → repeat until the list is exhausted. The user can pause or stop between main issues.
 
-4. **Check issue state** — before reading the full issue, verify it's still open. If it's already closed, skip it and move to the next one. No point implementing a resolved issue.
+   **Important:** Only one main issue is processed at a time. The orchestrator never dispatches multiple main issues in parallel — it picks the next main issue only after the current one is fully closed.
+
+5. **Check issue state** — before reading the full issue, verify it's still open. If it's already closed, skip it and move to the next main issue. No point implementing a resolved issue.
 
    ```bash
    # GitHub
@@ -71,9 +76,9 @@ When commands are structurally identical, use `$TRACKER` as a shortcut. When the
    glab issue view <number> -F json | jq -r '.state'
    ```
 
-   If state is `closed` / `CLOSED`, skip to next issue.
+   If state is `closed` / `CLOSED`, skip to next main issue.
 
-5. **Detect PRD (parent) issues** — if an issue has the `PRD` label OR its title starts with `PRD:`, it is a **parent issue** that tracks sub-issues rather than containing implementation work itself. **Skip it** — do not dispatch a sub agent for it. Continue to the next issue in the list. Track the PRD issue number for later auto-close (see PRD Auto-Close below).
+6. **Detect PRD (parent) issues** — if a main issue has the `PRD` label OR its title starts with `PRD:`, it is a **parent issue** that tracks sub-issues rather than containing implementation work itself. **Skip it** — do not dispatch a sub agent for it. Continue to the next main issue in the list. Track the PRD issue number for later auto-close (see PRD Auto-Close below).
 
    ```bash
    # GitHub — check PRD label or title prefix
@@ -90,7 +95,7 @@ When commands are structurally identical, use `$TRACKER` as a shortcut. When the
    - **Record its number** in a `PRD_TRACKER` list for auto-close checks
    - Present it to the user as: `#<number> [PRD] <title> (parent — skipping, sub-issues will be worked on)`
 
-6. **Read the full issue** — load details and comments:
+7. **Read the full issue** — load details and comments:
 
    ```bash
    # GitHub
@@ -101,7 +106,7 @@ When commands are structurally identical, use `$TRACKER` as a shortcut. When the
 
    For machine-readable output: GitHub uses `--json <fields>`, GitLab uses `-F json`.
 
-7. **Assign / label** — mark the issue as in-progress if the tracker supports it:
+8. **Assign / label** — mark the issue as in-progress if the tracker supports it:
 
    ```bash
    # GitHub
@@ -112,9 +117,9 @@ When commands are structurally identical, use `$TRACKER` as a shortcut. When the
 
 ### Dependency Detection & Formal Linking
 
-When working on a range of issues, build a **dependency graph** so the orchestrator can dispatch unblocked issues in parallel. Dependencies come from two sources:
+When working on a range of main issues, build a **dependency graph** from their `## Blocked by` sections. However, the orchestrator always processes main issues **one at a time, sequentially** — it never dispatches multiple main issues in parallel. Dependencies are used only to determine the correct ordering (blocked main issues are deferred until their blockers close).
 
-1. **Issue body `## Blocked by` section** — each issue's description may contain a `## Blocked by` heading followed by links to blocking issues. Parse these to determine which issues must complete before others can start.
+1. **Issue body `## Blocked by` section** — each main issue's description may contain a `## Blocked by` heading followed by links to blocking issues. Parse these to determine which main issues must complete before others can start.
 
 2. **Formal tracker links** — convert text-only references into native tracker relationships so the dependency graph shows up in GitLab/GitHub boards and UI.
 
@@ -135,14 +140,13 @@ Extract issue references from the `## Blocked by` section. References may appear
 - `https://github.com/owner/repo/issues/42` — full URL
 - `https://gitlab.com/owner/repo/-/issues/42` — full URL
 
-Build a **`DEPS` map** in memory:
+Build a **`DEPS` map** in memory (main issues only):
 
 ```
 DEPS = {
-  #42: [],              # no blockers — can start immediately
-  #43: [42],            # blocked by #42
-  #44: [42],            # blocked by #42
-  #45: [43, 44],        # blocked by both #43 and #44
+  #42: [],              # feat: — no blockers — process next
+  #43: [42],            # feat: — blocked by #42 — defer until #42 closes
+  #44: [],              # feat: — no blockers — process after #42 (sequential, one at a time)
 }
 ```
 
@@ -181,17 +185,17 @@ If the tracker API does not support formal links (or the CLI doesn't expose them
 
 A **PRD** issue is identified by its title starting with `PRD:` (e.g., `PRD: User Authentication System`). This is a parent/epic issue that aggregates sub-issues. Do not implement PRDs — skip them and work on their sub-issues instead.
 
-### Phase 2: Implement (Sub Agent Per Issue)
+### Phase 2: Implement (One Main Issue at a Time)
 
-**Every issue gets its own sub agent.** This gives each agent a clean, focused context — no pollution from previous issues, no accumulated baggage. The orchestrator (you) coordinates; the sub agent executes.
+**One main issue is processed at a time.** The orchestrator picks the next unblocked main issue, dispatches a sub agent for it, waits for completion, then moves to the next. This gives each main issue a clean, focused context. Within that main issue, independent subtasks may be parallelized (see Subtask Parallelization below).
 
-8. **Create a branch** — use the issue number in the branch name:
+9. **Create a branch** — use the main issue number in the branch name:
 
    ```bash
    git checkout -b work-on-issue-<number>
    ```
 
-9. **Dispatch a sub agent** to implement the issue. Construct the prompt with everything the agent needs:
+10. **Dispatch a sub agent** to implement the main issue. Construct the prompt with everything the agent needs:
 
    ```markdown
    You are implementing issue #<number>: <title>.
@@ -236,9 +240,9 @@ A **PRD** issue is identified by its title starting with `PRD:` (e.g., `PRD: Use
    - "I already understand the codebase" → Understanding ≠ best implementation; fresh eyes catch things
    - "Dispatching is overhead" — The sub agent's clean context prevents cross-issue mistakes
 
-10. **Verify** — after the sub agent returns, run verification yourself. Use [verification-before-completion](../verification-before-completion/SKILL.md) if available. Do NOT trust the sub agent's "all tests pass" claim — run the commands and confirm output. The sub agent's find-mismatch fixes are included in its commit; verify the diff looks correct.
+11. **Verify** — after the sub agent returns, run verification yourself. Use [verification-before-completion](../verification-before-completion/SKILL.md) if available. Do NOT trust the sub agent's "all tests pass" claim — run the commands and confirm output. The sub agent's find-mismatch fixes are included in its commit; verify the diff looks correct.
 
-11. **Commit** — the sub agent should commit. If it didn't, commit with:
+12. **Commit** — the sub agent should commit. If it didn't, commit with:
 
    ```bash
    git commit -m "fix: resolve #<number> — <description>"
@@ -246,7 +250,7 @@ A **PRD** issue is identified by its title starting with `PRD:` (e.g., `PRD: Use
 
 ### Phase 3: Submit & Close
 
-12. **Create a PR/MR**:
+13. **Create a PR/MR**:
 
     ```bash
     # GitHub
@@ -255,7 +259,7 @@ A **PRD** issue is identified by its title starting with `PRD:` (e.g., `PRD: Use
     glab mr create --title "Fix #<number>: <title>" --description "Closes #<number>"
     ```
 
-13. **Auto-merge the PR/MR** — merge immediately after creation:
+14. **Auto-merge the PR/MR** — merge immediately after creation:
 
     ```bash
     # GitHub
@@ -264,7 +268,7 @@ A **PRD** issue is identified by its title starting with `PRD:` (e.g., `PRD: Use
     glab mr merge <number> --squash --remove-source-branch
     ```
 
-14. **Post a summary comment** on the issue:
+15. **Post a summary comment** on the issue:
 
     ```bash
     # GitHub
@@ -273,7 +277,7 @@ A **PRD** issue is identified by its title starting with `PRD:` (e.g., `PRD: Use
     glab issue note <number> --message "Implementation complete. MR: <url>"
     ```
 
-15. **Update labels and close the issue**. GitHub PRs with "Closes #<number>" in the body auto-close on merge, but do not rely on that — always explicitly close:
+16. **Update labels and close the issue**. GitHub PRs with "Closes #<number>" in the body auto-close on merge, but do not rely on that — always explicitly close:
 
     Remove `needs-triage`, `in-progress`, and `ready-for-agent` labels, add `ai-agent-closed`, then close:
 
@@ -289,7 +293,7 @@ A **PRD** issue is identified by its title starting with `PRD:` (e.g., `PRD: Use
     glab issue close <number>
     ```
 
-16. **Clean up branch**:
+17. **Clean up branch**:
 
     ```bash
     git branch -d work-on-issue-<number>
@@ -299,7 +303,7 @@ A **PRD** issue is identified by its title starting with `PRD:` (e.g., `PRD: Use
 
 After closing a sub-issue, check whether any tracked PRD (parent) issues can be auto-closed. A PRD issue is ready to close when **all of its sub-issues are closed**.
 
-17. **After closing a sub-issue**, check each PRD in `PRD_TRACKER`:
+18. **After closing a sub-issue**, check each PRD in `PRD_TRACKER`:
 
     ```bash
     # GitHub — list sub-issues linked to the PRD (issues referenced in the body or via tracker links)
@@ -319,7 +323,7 @@ After closing a sub-issue, check whether any tracked PRD (parent) issues can be 
     glab issue view <sub-issue-number> -F json | jq -r '.state'
     ```
 
-18. **If all sub-issues are closed**, close the PRD:
+19. **If all sub-issues are closed**, close the PRD:
 
     ```bash
     # GitHub
@@ -450,102 +454,106 @@ Run tests relevant to your subtask. Return:
 When the user wants to work through multiple issues:
 
 1. Fetch the full open list (Phase 1).
-2. **Build the dependency graph** — parse `## Blocked by` sections from all issue bodies (see Dependency Detection & Formal Linking). Build the `DEPS` map and `PRD_TRACKER` list.
-3. **Set formal tracker links** — convert text-only blocked-by references into native GitLab/GitHub relationships.
-4. **Dispatch issues using dependency-aware scheduling** (see below).
-5. Between waves, check with the user before proceeding.
-6. Maintain a summary table:
+2. **Filter for main issues only** — keep only issues whose title starts with `PRD:` or `feat:`. Discard all others.
+3. **Build the dependency graph** — parse `## Blocked by` sections from all main issue bodies (see Dependency Detection & Formal Linking). Build the `DEPS` map and `PRD_TRACKER` list.
+4. **Set formal tracker links** — convert text-only blocked-by references into native GitLab/GitHub relationships.
+5. **Process main issues one at a time** (see below).
+6. Between main issues, check with the user before proceeding.
+7. Maintain a summary table:
 
-   | Issue | Title | Blocked By | Agent | Status | PR/MR |
-   |-------|-------|------------|-------|--------|-------|
-   | #12 | Setup DB schema | — | Agent-1 | ✅ Closed | !34 |
-   | #13 | Add API routes | — | Agent-2 | ✅ Closed | !35 |
-   | #14 | Add auth middleware | #12, #13 | Agent-3 | 🔄 In Progress | — |
-   | #15 | Add UI login page | #13 | Agent-4 | 🔄 In Progress | — |
-   | #16 | Integration tests | #14, #15 | ⏳ Pending | — |
+   | Issue | Title | Type | Blocked By | Agent | Status | PR/MR |
+   |-------|-------|------|------------|-------|--------|-------|
+   | #12 | feat: Setup DB schema | feat | — | Agent-1 | ✅ Closed | !34 |
+   | #13 | feat: Add API routes | feat | #12 | Agent-2 | 🔄 In Progress | — |
+   | #14 | bug: Fix typo | bug | — | — | ⏭ Skipped | — |
+   | #15 | feat: Add auth middleware | feat | #12, #13 | ⏳ Pending | — |
 
-### Dependency-Aware Parallel Dispatch
+   Non-main issues (rows without `PRD:` or `feat:` prefix) appear as "Skipped" in the table.
 
-Instead of running all issues strictly sequentially, the orchestrator uses the `DEPS` map to maximize parallelism:
+### Sequential Main-Issue Dispatch (One at a Time)
 
-```
-Build DEPS map from all issue bodies → Loop:
-  1. Find all issues with zero unresolved blockers (DEPS[issue] is empty OR all blockers are closed)
-  2. Dispatch a sub agent for each unblocked issue IN PARALLEL (single message with multiple Agent calls)
-     - Each agent gets its own branch: work-on-issue-<number>
-     - Each agent is constrained to its issue scope
-  3. Wait for all dispatched agents to complete
-  4. For each completed agent: verify, create PR/MR, merge, close issue, clean up branch
-  5. PRD auto-close check — check if any PRD in PRD_TRACKER has all sub-issues closed
-  6. Re-evaluate DEPS — issues whose blockers are now all closed become unblocked
-  7. If any unblocked issues remain → dispatch next wave (go to step 2)
-  8. If no unblocked issues remain AND unresolved issues exist → blocked, report to user
-  9. If all issues are closed → done
-```
-
-**Wave example:**
+The orchestrator processes main issues **strictly one at a time** — never in parallel across issues. The `DEPS` map determines the order (blocked main issues are deferred), but only one main issue is ever active at a time. Subtask parallelization within that single main issue still applies.
 
 ```
-DEPS = { #12: [], #13: [], #14: [#12, #13], #15: [#13], #16: [#14, #15] }
-
-Wave 1: #12 and #13 have no blockers → dispatch both in parallel
-  → #12 completes, #13 completes
-
-Wave 2: #14 (was blocked by #12,#13 — now unblocked) and #15 (was blocked by #13 — now unblocked) → dispatch both in parallel
-  → #14 completes, #15 completes
-
-Wave 3: #16 (was blocked by #14,#15 — now unblocked) → dispatch
-  → #16 completes
-
-All done. Check PRD auto-close.
+Build DEPS map from main issue bodies → Loop:
+  1. Find the next main issue with zero unresolved blockers (DEPS[issue] is empty OR all blockers are closed)
+  2. If no unblocked main issues remain AND unresolved main issues exist → report blockers → break to user
+  3. If all main issues are closed → done
+  4. Dispatch a single sub agent for the selected main issue
+     - Agent gets its own branch: work-on-issue-<number>
+     - Within this issue, the sub agent may parallelize independent subtasks (see Subtask Parallelization)
+  5. Wait for the sub agent to complete
+  6. Verify, create PR/MR, merge, close issue, clean up branch
+  7. PRD auto-close check — check if any PRD in PRD_TRACKER has all sub-issues closed
+  8. Re-evaluate DEPS — main issues whose blockers are now all closed become eligible
+  9. Go to step 1 (pick next unblocked main issue)
 ```
 
-**Important constraints for parallel issue dispatch:**
-- **Each issue MUST have its own git branch** — agents must not share branches. Use `work-on-issue-<number>` for each.
-- **Merge conflicts** — if two parallel agents modify the same files, the second to merge will conflict. The orchestrator must handle this: merge the first, then rebase/resolve the second before merging.
-- **Shared code conflicts** — if two issues likely touch the same files, keep them sequential even if the DEPS map says they're parallel. Check the issue descriptions for file overlap before dispatching in parallel.
-- **Maximum parallelism** — dispatch at most 3-4 issues in parallel to avoid resource exhaustion and merge conflicts.
+**Ordering example:**
+
+```
+Main issues only: DEPS = { #12 (feat): [], #13 (feat): [#12], #14 (feat): [#12] }
+
+Step 1: #12 has no blockers → dispatch sub agent for #12
+  → #12 completes, merged, closed
+
+Step 2: #13 and #14 now unblocked → pick #13 (lowest number) → dispatch sub agent for #13
+  → #13 completes, merged, closed
+
+Step 3: #14 still unblocked → dispatch sub agent for #14
+  → #14 completes, merged, closed
+
+All main issues done. Check PRD auto-close.
+```
+
+**Why one at a time:**
+- **No merge conflicts** — only one branch is active at a time, so there's no competition for the same files.
+- **Predictable ordering** — the user always knows which issue is being worked on.
+- **Clean context** — each main issue gets the orchestrator's full attention.
 
 ### Iterative Onwards Mode
 
-When the user picks "issue X onwards", the orchestrator enters a **continuous outer loop** — it keeps processing issues and re-fetching until the tracker is empty or the user stops. New issues filed during work are automatically picked up in the next refresh.
+When the user picks "issue X onwards", the orchestrator enters a **continuous outer loop** — it keeps processing main issues and re-fetching until the tracker is empty or the user stops. New main issues filed during work are automatically picked up in the next refresh.
 
 ```
 OUTER LOOP (never stops until tracker is empty or user says stop):
 
   1. Fetch ALL open issues from tracker
   2. If no open issues exist → report "All issues resolved" → STOP
-  3. Filter to issues >= starting number (honour "onwards")
-  4. Build PRD_TRACKER from PRD-titled/labeled issues
-  5. Parse all issue bodies → Build DEPS map
-  6. Set formal tracker links (if not already linked)
+  3. Filter to MAIN issues only (title starts with PRD: or feat:)
+  4. If no main issues remain → report "No main issues remaining" → STOP
+  5. Filter to issues >= starting number (honour "onwards")
+  6. Build PRD_TRACKER from PRD-titled/labeled issues
+  7. Parse all main issue bodies → Build DEPS map
+  8. Set formal tracker links (if not already linked)
 
-  INNER LOOP (wave-based dispatch):
-    a. Find all unblocked issues (DEPS empty or all blockers closed)
+  INNER LOOP (one main issue at a time):
+    a. Find the next unblocked main issue (DEPS empty or all blockers closed, lowest number first)
     b. Skip closed issues, skip PRDs
-    c. If no unblocked issues remain AND unresolved issues exist → report blockers → break to user
-    d. If no issues remain at all → break inner loop
-    e. Dispatch sub agents for all unblocked issues IN PARALLEL
-    f. Each sub agent: implement, find-mismatch, commit
-    g. For each completed agent: verify, create PR/MR, merge, close issue, clean up branch
+    c. If no unblocked main issues remain AND unresolved main issues exist → report blockers → break to user
+    d. If no main issues remain at all → break inner loop
+    e. Dispatch ONE sub agent for the selected main issue
+    f. Sub agent: implement (may parallelize subtasks internally), find-mismatch, commit
+    g. Verify, create PR/MR, merge, close issue, clean up branch
     h. PRD auto-close check
     i. Re-evaluate DEPS → back to step (a)
 
-  7. Inner loop done → brief user: "Wave complete. Re-fetching open issues..."
-  8. Go back to step 1 (OUTER LOOP re-fetches everything)
+  9. Inner loop done → brief user: "Main issues processed. Re-fetching..."
+  10. Go back to step 1 (OUTER LOOP re-fetches everything)
 ```
 
 **Loop behavior:**
-- **Continuous refresh** — after every wave completes and all tracked issues are closed, the orchestrator re-fetches the full open issue list. If new issues have been filed (by teammates, CI, or other agents), they are automatically picked up and processed.
-- **Never stops early** — the loop only exits when the tracker returns zero open issues OR the user says "stop". It does NOT stop just because the initially-fetched batch is done.
+- **Main issues only** — only issues whose title starts with `PRD:` or `feat:` are considered. All other issues are ignored at the top level.
+- **One at a time** — only one main issue is dispatched at a time. The orchestrator waits for it to complete before picking the next.
+- **Continuous refresh** — after every main issue completes and the inner loop finishes, the orchestrator re-fetches the full open issue list. If new main issues have been filed, they are automatically picked up.
+- **Never stops early** — the loop only exits when the tracker returns zero open main issues OR the user says "stop".
 - **Skip closed issues** — before dispatching a sub agent, check the issue state. If it's already closed, skip it immediately.
-- **Skip PRD (parent) issues** — if an issue's title starts with `PRD:` or has the `PRD` label, record it in `PRD_TRACKER` and skip.
+- **Skip PRD (parent) issues** — if an issue's title starts with `PRD:` or has the `PRD` label, record it in `PRD_TRACKER` and skip (PRDs are not implemented, only tracked for auto-close).
 - **Auto-close PRDs** — after each sub-issue is closed, check every PRD in `PRD_TRACKER` to see if all its sub-issues are now closed. If they are, close the PRD automatically.
-- **Parallel dispatch within waves** — all issues with resolved blockers are dispatched simultaneously in a single message with multiple Agent tool calls.
-- **Respect dependency order** — never dispatch an issue whose blockers are still open. Wait for the blocking wave to complete first.
-- Between waves, give the user a status update and a chance to pause/stop.
+- **Respect dependency order** — never dispatch a main issue whose blockers are still open.
+- Between main issues, give the user a status update and a chance to pause/stop.
 - If the user says "stop" or "skip" at any point, break out of the loop.
-- **Onwards range** — the `>= starting number` filter is re-applied on each outer loop refresh, so newly filed issues with numbers >= the starting issue are included.
+- **Onwards range** — the `>= starting number` filter is re-applied on each outer loop refresh, so newly filed main issues with numbers >= the starting issue are included.
 
 #### Refresh Query
 
@@ -562,25 +570,9 @@ glab issue list -O json
 If the result is empty → announce "All issues resolved. No open issues remaining." → exit.
 If the result contains new issues → announce "Found N new open issues" → continue inner loop.
 
-### Handling Merge Conflicts in Parallel Dispatch
-
-When parallel issues modify overlapping files, merge conflicts are inevitable. Handle them:
-
-1. **Detect overlap before dispatch** — if two issues likely touch the same files, run them sequentially instead of in parallel, even if they have no formal blocked-by relationship.
-2. **First merge wins** — merge the first completing agent's PR/MR. For subsequent agents on the same base:
-   ```bash
-   git checkout main && git pull
-   git checkout work-on-issue-<number>
-   git rebase main
-   # Resolve conflicts manually or via sub agent
-   git rebase --continue
-   git push --force-with-lease origin work-on-issue-<number>
-   ```
-3. **If rebase is too complex** — ask the user whether to resolve manually or skip the issue.
-
 ### Single Issue Mode
 
-When the user picks a single issue (not a range), run it solo — no dependency parsing needed, no parallel dispatch across issues. Subtask parallelization within that single issue still applies.
+When the user picks a single main issue (not a range), run it solo — no dependency parsing needed. Subtask parallelization within that single issue still applies.
 
 ## Label Conventions
 
@@ -629,8 +621,9 @@ glab issue update <number> --label "in-progress" || \
 - **Issue already assigned** — skip the assignment step.
 - **Issue needs clarification** — comment/note on the issue asking for details, then pause implementation.
 - **Partially done** — if an issue is too large, break it into sub-issues or a checklist and track progress in a comment/note.
-- **No `## Blocked by` section** — treat the issue as having no blockers (empty DEPS entry). It can be dispatched immediately in any wave.
+- **No `## Blocked by` section** — treat the issue as having no blockers (empty DEPS entry). It can be dispatched immediately.
 - **Circular dependency** — if the DEPS map contains a cycle (e.g., A blocked by B, B blocked by A), report it to the user and skip both issues. Do not attempt to dispatch.
 - **External blocker** — if a blocked-by reference points to an issue outside the selected range, check its state. If it's already closed, ignore it. If it's open, treat it as an unresolved blocker.
-- **Formal link API failure** — if setting native tracker links fails, fall back to text-only references. The DEPS map still works for parallelization.
-- **Merge conflict in parallel wave** — see Handling Merge Conflicts in Parallel Dispatch above.
+- **Formal link API failure** — if setting native tracker links fails, fall back to text-only references. The DEPS map still works for ordering.
+- **No main issues found** — if after filtering for `PRD:`/`feat:` prefixed issues, the list is empty, report to the user: "No main issues (PRD: or feat:) found in the tracker. All open issues are non-main types (bug:, chore:, etc.)." Ask the user if they want to process specific non-main issues.
+- **User wants to work on a non-main issue** — if the user explicitly picks a non-main issue by number, honor their choice. The `PRD:`/`feat:` filter only applies to automatic/batch selection, not to explicit user picks.
