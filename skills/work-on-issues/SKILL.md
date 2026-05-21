@@ -189,7 +189,7 @@ A **PRD** issue is identified by its title starting with `PRD:` (e.g., `PRD: Use
 
 **One main issue is processed at a time.** The orchestrator picks the next unblocked main issue, dispatches a sub agent for it, waits for completion, then moves to the next. This gives each main issue a clean, focused context. Within that main issue, independent subtasks may be parallelized (see Subtask Parallelization below).
 
-9. **Create a worktree** — create an isolated git worktree in `.claude/worktrees/` with a dedicated branch:
+9. **Create a worktree** — always use a git worktree for issue isolation. **Never use `git checkout -b`** — worktrees keep the main working tree clean and allow parallel work. Create one in `.claude/worktrees/` with a dedicated branch:
 
    ```bash
    # Ensure the worktrees directory exists
@@ -199,11 +199,13 @@ A **PRD** issue is identified by its title starting with `PRD:` (e.g., `PRD: Use
    git worktree add .claude/worktrees/issue-<number> -b work-on-issue-<number>
    ```
 
-   Then copy environment files into the worktree so the sub agent has access to secrets/config:
+   **Copy environment files into the worktree** — this is mandatory, not optional. Sub agents need `.env` files to run tests, connect to databases, and access services. A worktree is a separate directory and does not inherit `.env` files from the main working tree:
 
    ```bash
-   # Copy .env and .env.* files to the worktree (skip if none exist)
+   # ALWAYS copy .env and .env.* files — do NOT skip even if no .env exists in the main tree
    for f in .env .env.*; do [ -f "$f" ] && cp "$f" .claude/worktrees/issue-<number>/; done
+   # Verify the files were copied (optional but recommended):
+   ls -la .claude/worktrees/issue-<number>/.env*
    ```
 
 10. **Dispatch a sub agent** to implement the main issue. Construct the prompt with everything the agent needs:
@@ -218,6 +220,9 @@ A **PRD** issue is identified by its title starting with `PRD:` (e.g., `PRD: Use
    You are working in a git worktree at `.claude/worktrees/issue-<number>`.
    Branch `work-on-issue-<number>` is already checked out in that directory.
    All file operations (reads, edits, tests) must target paths inside this worktree.
+
+   ## Environment Files
+   `.env` and `.env.*` files have been copied into the worktree directory. You do not need to create them. If tests or services fail due to missing environment variables, check that the `.env` files are present in the worktree root before proceeding.
 
    ## Constraints
    - Follow the issue description and acceptance criteria exactly
@@ -441,6 +446,10 @@ When the sub agent identifies parallelizable subtasks, it dispatches child agent
 You are implementing a subtask of issue #<number>: <title>.
 
 ## Subtask: <specific subtask description>
+
+## Working Directory
+You are working in a git worktree at `.claude/worktrees/issue-<number>`.
+`.env` and `.env.*` files are already present in the worktree root.
 
 ## Scope
 - Files you MAY modify: <list>
