@@ -19,9 +19,10 @@ Walk through **every file**. Check every function call, type annotation, propert
 ## Process
 
 1. Read the full codebase (or specified files/directories)
-2. Apply each checklist category from [CHECKLIST.md](CHECKLIST.md)
-3. For language-specific checks, consult [LANGUAGE-SPECIFIC.md](LANGUAGE-SPECIFIC.md)
-4. Report findings using the format in [OUTPUT-FORMAT.md](OUTPUT-FORMAT.md)
+2. **Fallow Audit (JS/TS only)** — see [Fallow Integration](#fallow-integration) below
+3. Apply each checklist category from [CHECKLIST.md](CHECKLIST.md)
+4. For language-specific checks, consult [LANGUAGE-SPECIFIC.md](LANGUAGE-SPECIFIC.md)
+5. Report findings using the format in [OUTPUT-FORMAT.md](OUTPUT-FORMAT.md)
 
 ## Checklist Categories
 
@@ -37,6 +38,7 @@ Apply these in order — the first two are the most critical:
 | 6 | CSS & Styling Mismatches | Silent transparent/invisible rendering — see [CHECKLIST.md](CHECKLIST.md#6-css--styling-mismatches) |
 | 7 | Placeholder & Stub Code | Incomplete implementations — see [CHECKLIST.md](CHECKLIST.md#7-placeholder--stub-code) |
 | 8 | Language-Specific Gaps | Type system holes + AI-specific errors — see [LANGUAGE-SPECIFIC.md](LANGUAGE-SPECIFIC.md) |
+| 9 | Fallow Static Analysis | Unused exports, dead code, circular deps, complexity, duplication — see [FALLOW-MAPPING.md](FALLOW-MAPPING.md) |
 
 ## Rules
 
@@ -44,3 +46,29 @@ Apply these in order — the first two are the most critical:
 - Do NOT report: style, naming, formatting, performance suggestions, missing tests/docs
 - Do NOT report: "consider using X instead of Y"
 - If uncertain whether something is a real bug, investigate before reporting
+
+## Fallow Integration
+
+For JS/TS projects, run the `fallow` static analysis tool before manual review. This catches mechanical issues deterministically so the manual review can focus on semantic bugs.
+
+### When to run
+
+Run the fallow pre-check when **all** of these are true:
+1. The project contains a `package.json`, `tsconfig.json`, or `.ts`/`.js` files (JS/TS project detection)
+2. `npx fallow --version` succeeds (fallow is available)
+
+If either condition is false, **skip the pre-check entirely** and proceed with manual review. Do NOT install fallow.
+
+### How to run
+
+1. **Run the audit**: `npx fallow audit --format json --quiet`
+2. **Get staged files**: `git diff --staged --name-only`
+3. **Apply auto-fixes to staged files only** — see [FALLOW-MAPPING.md](FALLOW-MAPPING.md) for fix types and the staged/unstaged filtering logic
+4. **Re-run audit** to verify fixes: `npx fallow audit --format json --quiet`
+5. **Collect non-auto-fixable findings** (and unstaged auto-fixable findings) for the manual review report
+
+### Edge cases
+
+- **Audit JSON parse error**: Log a warning, skip fallow, proceed with manual review only
+- **No staged files**: Treat all findings as report-only (no modifications)
+- **Fallow not installed**: Skip silently, no errors

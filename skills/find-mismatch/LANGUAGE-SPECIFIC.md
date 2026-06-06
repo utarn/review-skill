@@ -29,6 +29,15 @@ The flexibility of JavaScript and the strictness of TypeScript create two differ
 - Type assertions (`as X`) that lie about the actual shape
 - Interface field mismatch between what's declared and what's used at runtime
 
+### Fallow Automated Analysis
+
+When fallow runs as the pre-check step, be aware of these patterns that can produce false positives or require careful judgment:
+
+- **Re-exported symbols used only in tests**: An export may appear unused in production code but is imported exclusively in test files. Fallow may flag it as unused. Check for test file imports before removing.
+- **Barrel file exports that may be intentional**: `index.ts` files that re-export from multiple modules serve as public API surfaces. Even if some exports aren't currently imported, they may be part of a published package's API. Flag for review rather than auto-removing.
+- **Dynamic imports that cause false positives**: `import('./module')` and `require('./module')` may not be statically analyzable. If fallow marks a file as unused, check for dynamic import patterns first.
+- **Type-only imports/exports**: TypeScript `import type` / `export type` statements are erased at compile time. An unused type export doesn't affect runtime, but may still be worth flagging as dead code in the report.
+
 ## C++
 
 C++ is incredibly complex, and AIs often struggle with memory management and historical baggage.

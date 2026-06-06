@@ -1,5 +1,7 @@
 # Review Checklist
 
+> **JS/TS projects**: The [fallow](FALLOW-MAPPING.md) static analysis pre-check catches unused exports, dead code, circular dependencies, complexity, and duplication before this manual review. Fallow findings map to the categories below.
+
 ## 1. Cross-Boundary Contract Mismatches
 
 The most critical category — these silently fail at runtime.
