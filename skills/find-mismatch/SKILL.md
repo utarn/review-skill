@@ -53,11 +53,9 @@ For JS/TS projects, run the `fallow` static analysis tool before manual review. 
 
 ### When to run
 
-Run the fallow pre-check when **all** of these are true:
-1. The project contains a `package.json`, `tsconfig.json`, or `.ts`/`.js` files (JS/TS project detection)
-2. `npx fallow --version` succeeds (fallow is available)
+Run the fallow pre-check when the project contains a `package.json`, `tsconfig.json`, or `.ts`/`.js` files (JS/TS project detection). This is mandatory for all TypeScript and JavaScript projects.
 
-If either condition is false, **skip the pre-check entirely** and proceed with manual review. Do NOT install fallow.
+If `npx fallow --version` fails, install fallow first: `npm install -D fallow`, then proceed with the audit.
 
 ### How to run
 
@@ -71,4 +69,4 @@ If either condition is false, **skip the pre-check entirely** and proceed with m
 
 - **Audit JSON parse error**: Log a warning, skip fallow, proceed with manual review only
 - **No staged files**: Treat all findings as report-only (no modifications)
-- **Fallow not installed**: Skip silently, no errors
+- **Fallow not installed**: Install via `npm install -D fallow`, then run the audit
