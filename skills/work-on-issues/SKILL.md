@@ -230,6 +230,26 @@ A **PRD** issue is identified by its title starting with `PRD:` (e.g., `PRD: Use
    - Run tests, lint, and build after implementation
    - Commit with message: "fix: resolve #<number> — <short description>"
 
+   ## Unsure About Latest APIs or Code? Look It Up
+   Do not rely on memory for library/framework APIs, syntax, versions, or current best practices — your knowledge may be stale. If you are not sure, use the tools available to you:
+   - **context7** (preferred for library/framework/SDK/CLI docs) — fetch the latest documentation for the library or API in question.
+   - **Web search** — for the latest code, release notes, migration guides, or breaking changes.
+
+   Only fall back to your best judgment if neither tool is available.
+
+   ## Reference Directories
+   <If the orchestrator has added extra directories to this session via `/add-dir` or an equivalent command, list their absolute paths here. These contain a working **reference project** to consult when you get stuck. If none were added, write "None — no reference project available".>
+
+   ## Repeated Compile/Lint Failures — Consult Reference Projects
+   If the build, type-check, or lint fails **repeatedly (3+ attempts on the same error)**, do not keep guessing. A reference project may be available to unblock you:
+
+   1. **List the additional directories** available to this session — those added via `/add-dir` or a related command are listed above under **Reference Directories**. If "None" is listed, report that you are stuck and need a reference rather than burning more attempts.
+   2. **Look up the reference project** — search it for the working setup: dependency versions in `package.json`, build/bundler config, `tsconfig.json`, lint config, and how it structures the module that is failing.
+   3. **Align your implementation** with the reference project's proven setup (versions, config, import paths, patterns).
+   4. **Resume** — re-run the build/type-check/lint to confirm the error is resolved.
+
+   Do not burn attempt after attempt on the same compile/lint error when a reference project exists to show you the correct configuration.
+
    ## Subtask Parallelization
    Before implementing, analyze whether the issue contains independent subtasks that can run in parallel (see Subtask Parallelization section below). If so, dispatch parallel sub agents for non-blocking subtasks.
 
@@ -250,6 +270,8 @@ A **PRD** issue is identified by its title starting with `PRD:` (e.g., `PRD: Use
    ## Output
    Return a summary of: what you implemented, what find-mismatch fixes were applied, what tests you ran, and the commit hash.
    ```
+
+   **Inject reference directories into the prompt:** If the user has added extra directories to this session via `/add-dir` (or an equivalent command), list their absolute paths under the **Reference Directories** section of the prompt. These are reference projects the sub agent consults when compilation or linting fails repeatedly (see the "Repeated Compile/Lint Failures" section embedded in the prompt).
 
    Use the `Agent` tool with `subagent_type: "full-stack-engineer"` for implementation work. The sub agent starts fresh — no context from other issues or prior conversations. The sub agent prompt includes instructions to automatically run find-mismatch after implementation and fix any bugs found. **The sub agent works inside the worktree directory** (`.claude/worktrees/issue-<number>`), not the main working tree.
 
@@ -451,9 +473,22 @@ You are implementing a subtask of issue #<number>: <title>.
 You are working in a git worktree at `.claude/worktrees/issue-<number>`.
 `.env` and `.env.*` files are already present in the worktree root.
 
+## Reference Directories
+<If extra directories were added to this session via `/add-dir` or a related command, list their absolute paths here; otherwise write "None".>
+
+## Unsure About Latest APIs or Code? Look It Up
+Do not rely on memory for library/framework APIs, syntax, or versions — your knowledge may be stale. If unsure, use **context7** (preferred) for library/framework/SDK/CLI docs, or **web search** for the latest code, release notes, migration guides, or breaking changes. Fall back to your best judgment only if neither is available.
+
 ## Scope
 - Files you MAY modify: <list>
 - Files you MUST NOT modify: <list> (another agent is handling these)
+
+## Repeated Compile/Lint Failures — Consult Reference Projects
+If the build, type-check, or lint fails **repeatedly (3+ attempts on the same error)**, stop guessing:
+1. **List the additional directories** available to this session — those added via `/add-dir` or a related command (listed above under **Reference Directories**).
+2. **Look up the reference project** for the working setup: dependency versions, build/bundler config, `tsconfig.json`, lint config, and how it structures the failing module.
+3. **Align your implementation** with the reference project's proven setup, then re-run the build/type-check/lint.
+If no reference directories were provided, report that you are stuck rather than burning more attempts.
 
 ## Requirements
 <paste relevant acceptance criteria for this subtask only>

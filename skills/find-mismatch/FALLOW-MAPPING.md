@@ -1,6 +1,6 @@
 # Fallow Mapping
 
-Bridge between [fallow](https://github.com/fallow-js/fallow) static analysis output and the find-mismatch checklist categories. Used automatically when the reviewed project is JS/TS and fallow is installed.
+Bridge between [fallow](https://github.com/fallow-rs/fallow) ([docs](https://docs.fallow.tools)) static analysis output and the find-mismatch checklist categories. Fallow is invoked via `fallow audit` — installed globally with `npm install -g fallow` — to surface dead code, circular dependencies, complexity hotspots, duplication, and architecture boundary violations. Used automatically when the reviewed project is JS/TS.
 
 ## Finding-to-Category Mapping
 
@@ -74,7 +74,7 @@ git diff --staged --name-only
 
 **STAGED findings** (file appears in staged list):
 - Apply auto-fixes automatically
-- Re-run `npx fallow audit --format json --quiet` to verify the fix resolved the finding
+- Re-run `fallow audit --format json --quiet` to verify the fix resolved the finding
 - If the re-run still reports the same issue, escalate to manual review
 
 **UNSTAGED findings** (file does NOT appear in staged list):
@@ -111,7 +111,7 @@ git diff --staged --name-only
 After applying fixes to staged files:
 
 ```bash
-npx fallow audit --format json --quiet
+fallow audit --format json --quiet
 ```
 
 - If `verdict` is now `"pass"`, all fixes succeeded

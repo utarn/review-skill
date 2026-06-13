@@ -38,7 +38,7 @@ Apply these in order — the first two are the most critical:
 | 6 | CSS & Styling Mismatches | Silent transparent/invisible rendering — see [CHECKLIST.md](CHECKLIST.md#6-css--styling-mismatches) |
 | 7 | Placeholder & Stub Code | Incomplete implementations — see [CHECKLIST.md](CHECKLIST.md#7-placeholder--stub-code) |
 | 8 | Language-Specific Gaps | Type system holes + AI-specific errors — see [LANGUAGE-SPECIFIC.md](LANGUAGE-SPECIFIC.md) |
-| 9 | Fallow Static Analysis | Unused exports, dead code, circular deps, complexity, duplication — see [FALLOW-MAPPING.md](FALLOW-MAPPING.md) |
+| 9 | Fallow Static Analysis | Dead code, circular dependencies, complexity hotspots, duplication, architecture violations — see [FALLOW-MAPPING.md](FALLOW-MAPPING.md) |
 
 ## Rules
 
@@ -49,24 +49,32 @@ Apply these in order — the first two are the most critical:
 
 ## Fallow Integration
 
-For JS/TS projects, run the `fallow` static analysis tool before manual review. This catches mechanical issues deterministically so the manual review can focus on semantic bugs.
+For JS/TS projects, run the `fallow` static analysis tool before manual review. Fallow provides deterministic **static analysis and code improvement** — it surfaces dead code (unused exports/files/dependencies), circular dependencies, complexity hotspots, duplication, and architecture boundary violations, auto-applies safe fixes, and resolves mechanical issues deterministically so the manual review can focus on semantic bugs.
+
+> **Note:** Fallow is not a TypeScript type-checker or ESLint-style linter. For type errors run `tsc --noEmit` (or the project's type-check command); for lint run the project's configured linter. Fallow complements those by catching dead code, complexity, duplication, and structural issues.
 
 ### When to run
 
 Run the fallow pre-check when the project contains a `package.json`, `tsconfig.json`, or `.ts`/`.js` files (JS/TS project detection). This is mandatory for all TypeScript and JavaScript projects.
 
-If `npx fallow --version` fails, install fallow first: `npm install -D fallow`, then proceed with the audit.
+Fallow must be installed **globally**. If `fallow --version` fails, install it first:
+
+```bash
+npm install -g fallow
+```
+
+A global install makes `fallow` available in every project without adding a per-project `devDependency` or going through `npx`. After installing, proceed with the audit.
 
 ### How to run
 
-1. **Run the audit**: `npx fallow audit --format json --quiet`
+1. **Run the audit**: `fallow audit --format json --quiet`
 2. **Get staged files**: `git diff --staged --name-only`
 3. **Apply auto-fixes to staged files only** — see [FALLOW-MAPPING.md](FALLOW-MAPPING.md) for fix types and the staged/unstaged filtering logic
-4. **Re-run audit** to verify fixes: `npx fallow audit --format json --quiet`
+4. **Re-run audit** to verify fixes: `fallow audit --format json --quiet`
 5. **Collect non-auto-fixable findings** (and unstaged auto-fixable findings) for the manual review report
 
 ### Edge cases
 
 - **Audit JSON parse error**: Log a warning, skip fallow, proceed with manual review only
 - **No staged files**: Treat all findings as report-only (no modifications)
-- **Fallow not installed**: Install via `npm install -D fallow`, then run the audit
+- **Fallow not installed**: Install globally via `npm install -g fallow`, then run the audit
