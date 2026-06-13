@@ -209,6 +209,8 @@ A **PRD** issue is identified by its title starting with `PRD:` (e.g., `PRD: Use
    ls -la .claude/worktrees/issue-<number>/.env*
    ```
 
+   **Round-trip:** if the sub agent modifies or adds any of these env files while implementing the issue, those changes are copied **back** to the main working directory before the worktree is removed (Phase 3, step 17). Env files are gitignored, so without that propagation the change is silently lost — neither the commit nor the merge carries it.
+
 10. **Dispatch a sub agent** to implement the main issue. Construct the prompt with everything the agent needs:
 
    ```markdown
@@ -334,7 +336,31 @@ A **PRD** issue is identified by its title starting with `PRD:` (e.g., `PRD: Use
     glab issue close <number>
     ```
 
-17. **Clean up worktree and branch**:
+17. **Propagate modified `.env` files back to the main working tree** — `.env` and `.env.*` are gitignored, so the sub agent's changes to them are **not** carried by the commit / PR / merge, and `git status` / `git diff` will not surface them. The worktree is about to be removed (step 18), which would delete those changes permanently. Before that happens, copy any env file the sub agent modified (or newly created) back to the main working directory so future worktrees inherit it.
+
+    Run this **from the main working directory (repo root)**, not from inside the worktree:
+
+    ```bash
+    WT=.claude/worktrees/issue-<number>
+    shopt -s nullglob
+    propagated=()
+    for wtf in "$WT"/.env "$WT"/.env.*; do
+      [ -f "$wtf" ] || continue
+      base=$(basename "$wtf")
+      if [ ! -f "$base" ] || ! cmp -s "$base" "$wtf"; then
+        cp "$wtf" "$base"
+        propagated+=("$base")
+      fi
+    done
+    shopt -u nullglob
+    [ ${#propagated[@]} -gt 0 ] && echo "Propagated env files back to main: ${propagated[*]}" || echo "No env files modified in the worktree"
+    ```
+
+    **Why this is needed:** a sub agent may add a new env var (e.g., a new API key or config) that the feature requires. Without this step, that change is lost when the worktree is removed — the next worktree copies the stale main `.env` back in (step 9), and the feature breaks.
+
+    **This never commits secrets:** env files stay gitignored. Do not `git add -f` them. The goal is local persistence across worktrees, not version control of secrets.
+
+18. **Clean up worktree and branch**:
 
     ```bash
     # Remove the worktree
@@ -348,7 +374,7 @@ A **PRD** issue is identified by its title starting with `PRD:` (e.g., `PRD: Use
 
 After closing a sub-issue, check whether any tracked PRD (parent) issues can be auto-closed. A PRD issue is ready to close when **all of its sub-issues are closed**.
 
-18. **After closing a sub-issue**, check each PRD in `PRD_TRACKER`:
+19. **After closing a sub-issue**, check each PRD in `PRD_TRACKER`:
 
     ```bash
     # GitHub — list sub-issues linked to the PRD (issues referenced in the body or via tracker links)
@@ -368,7 +394,7 @@ After closing a sub-issue, check whether any tracked PRD (parent) issues can be 
     glab issue view <sub-issue-number> -F json | jq -r '.state'
     ```
 
-19. **If all sub-issues are closed**, close the PRD:
+20. **If all sub-issues are closed**, close the PRD:
 
     ```bash
     # GitHub
@@ -545,7 +571,7 @@ Build DEPS map from main issue bodies → Loop:
      - Agent gets its own worktree: .claude/worktrees/issue-<number> with branch work-on-issue-<number>
      - Within this issue, the sub agent may parallelize independent subtasks (see Subtask Parallelization)
   5. Wait for the sub agent to complete
-  6. Verify, create PR/MR, merge, close issue, clean up branch
+  6. Verify, create PR/MR, merge, close issue, propagate modified .env/.env.* back to main, clean up branch
   7. PRD auto-close check — check if any PRD in PRD_TRACKER has all sub-issues closed
   8. Re-evaluate DEPS — main issues whose blockers are now all closed become eligible
   9. Go to step 1 (pick next unblocked main issue)
@@ -596,7 +622,7 @@ OUTER LOOP (never stops until tracker is empty or user says stop):
     d. If no main issues remain at all → break inner loop
     e. Dispatch ONE sub agent for the selected main issue
     f. Sub agent: implement (may parallelize subtasks internally), find-mismatch, commit
-    g. Verify, create PR/MR, merge, close issue, clean up worktree and branch
+    g. Verify, create PR/MR, merge, close issue, propagate modified .env/.env.* back to main working tree, clean up worktree and branch
     h. PRD auto-close check
     i. Re-evaluate DEPS → back to step (a)
 
@@ -689,3 +715,4 @@ glab issue update <number> --label "in-progress" || \
 - **Formal link API failure** — if setting native tracker links fails, fall back to text-only references. The DEPS map still works for ordering.
 - **No main issues found** — if after filtering for `PRD:`/`feat:` prefixed issues, the list is empty, report to the user: "No main issues (PRD: or feat:) found in the tracker. All open issues are non-main types (bug:, chore:, etc.)." Ask the user if they want to process specific non-main issues.
 - **User wants to work on a non-main issue** — if the user explicitly picks a non-main issue by number, honor their choice. The `PRD:`/`feat:` filter only applies to automatic/batch selection, not to explicit user picks.
+- **Sub agent modified `.env` / `.env.*`** — these files are gitignored, so the change never appears in `git status`/`git diff` and is not carried by the commit, PR, or merge. Phase 3 step 17 explicitly copies any modified or newly-created env file from the worktree back to the main working directory **before** the worktree is removed. Files stay gitignored (never `git add -f`); the goal is local persistence across worktrees, not committing secrets. This step must run before `git worktree remove` — after removal the files are gone.
