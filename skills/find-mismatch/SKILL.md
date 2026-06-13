@@ -1,5 +1,6 @@
 ---
 name: find-mismatch
+effort: max
 description: >
   Systematic code review focused on finding real bugs — cross-boundary contract mismatches,
   logic errors, async bugs, and runtime failures. Use when reviewing AI-generated code,

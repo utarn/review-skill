@@ -1,5 +1,6 @@
 ---
 name: work-on-issues
+effort: max
 description: >
   Use when the user says "work on issues", "fetch issues", "pick up an issue", "start working on",
   or wants to triage and implement tickets from the issue tracker. Only processes main issues
