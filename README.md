@@ -97,10 +97,7 @@ review-skill/
 │   └── plugin.json
 ├── skills/
 │   ├── find-mismatch/
-│   │   ├── SKILL.md              # Main instructions
-│   │   ├── CHECKLIST.md          # Detailed checklist
-│   │   ├── LANGUAGE-SPECIFIC.md  # Per-language checks
-│   │   └── OUTPUT-FORMAT.md      # Reporting format
+│   │   └── SKILL.md              # Systematic code review instructions
 │   └── work-on-issues/
 │       └── SKILL.md              # Issue workflow instructions
 └── README.md

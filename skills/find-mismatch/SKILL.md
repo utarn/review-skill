@@ -1,81 +1,106 @@
 ---
 name: find-mismatch
-effort: max
+effort: high
 description: >
-  Systematic code review focused on finding real bugs — cross-boundary contract mismatches,
-  logic errors, async bugs, and runtime failures. Use when reviewing AI-generated code,
-  reviewing a PR, auditing a codebase for bugs, or when user says "review this code",
-  "find bugs", "check for issues", or "find-mismatch".
+  Systematic code review focusing on bugs that break at runtime (contract mismatches, logic/async errors, serialization, styling) and JS/TS static analysis via fallow.
 disable-model-invocation: true
 ---
 
 # Find Mismatch
 
-Systematic bug detection for AI-generated or any codebase. Finds things that **will break at runtime** — not style issues, not hypotheticals.
+Walk through every file. Focus only on runtime failures/bugs. Do NOT report style, formatting, performance suggestions, docs/tests, or "consider using X".
 
-## Scope
+## 1. Process
+1. **JS/TS (Pre-check)**: Run static analysis.
+   - Check if installed: `fallow --version`.
+   - Install globally if missing: `npm install -g fallow`.
+   - Execute audit: `fallow audit --format json --quiet`.
+   - Filter findings by git status: `git diff --staged --name-only`.
+   - If staged: auto-apply safe fixes, re-run audit to verify.
+   - If unstaged: report-only (no modification).
+2. **Review Checklist**: Apply checklist to all changes.
+3. **Report**: Format findings using the specified template.
 
-Walk through **every file**. Check every function call, type annotation, property access, and cross-boundary interaction. Do not skip any file.
+---
 
-## Process
+## 2. Checklist Categories
 
-1. Read the full codebase (or specified files/directories)
-2. **Fallow Audit (JS/TS only)** — see [Fallow Integration](#fallow-integration) below
-3. Apply each checklist category from [CHECKLIST.md](CHECKLIST.md)
-4. For language-specific checks, consult [LANGUAGE-SPECIFIC.md](LANGUAGE-SPECIFIC.md)
-5. Report findings using the format in [OUTPUT-FORMAT.md](OUTPUT-FORMAT.md)
+### 1. Cross-Boundary Contracts
+- Calling mismatch: Check RPC, HTTP, IPC, event name/subject match receiver.
+- Param names/types: `userId` vs `user_id`, string vs number, flat vs wrapped.
+- Return type: Field accesses (`result.field`) must match return signature.
 
-## Checklist Categories
+### 2. Serialization & Deserialization
+- Casing: `snake_case` in DB/backend vs `camelCase` in JSON/frontend.
+- Optionals: Field expected by receiver but optional in producer.
+- Enums/discriminators: Discriminant fields (`type`, `kind`) and variants match.
+- Base64: Double-encoding layers.
 
-Apply these in order — the first two are the most critical:
+### 3. Logic Bugs
+- Double counting: Counters incremented both in loop/branch and outside.
+- Off-by-one: Index, pagination bounds (`page <= total` vs `page < total`).
+- Conditions: Redundant/dead flags, unreachable statements, shadowed variables.
 
-| # | Category | Why it matters |
-|---|----------|---------------|
-| 1 | Cross-Boundary Contracts | Silent runtime failures — see [CHECKLIST.md](CHECKLIST.md#1-cross-boundary-contract-mismatches) |
-| 2 | Serialization Gaps | Data corruption between layers — see [CHECKLIST.md](CHECKLIST.md#2-serialization--deserialization-gaps) |
-| 3 | Logic Bugs | Wrong results — see [CHECKLIST.md](CHECKLIST.md#3-logic-bugs) |
-| 4 | Property & Method Access | Null dereferences — see [CHECKLIST.md](CHECKLIST.md#4-property--method-access-errors) |
-| 5 | Async & Concurrency | Race conditions, leaks — see [CHECKLIST.md](CHECKLIST.md#5-async--concurrency-bugs) |
-| 6 | CSS & Styling Mismatches | Silent transparent/invisible rendering — see [CHECKLIST.md](CHECKLIST.md#6-css--styling-mismatches) |
-| 7 | Placeholder & Stub Code | Incomplete implementations — see [CHECKLIST.md](CHECKLIST.md#7-placeholder--stub-code) |
-| 8 | Language-Specific Gaps | Type system holes + AI-specific errors — see [LANGUAGE-SPECIFIC.md](LANGUAGE-SPECIFIC.md) |
-| 9 | Fallow Static Analysis | Dead code, circular dependencies, complexity hotspots, duplication, architecture violations — see [FALLOW-MAPPING.md](FALLOW-MAPPING.md) |
+### 4. Property & Method Access
+- Null derefs: Method calls or array index access (`items[0].name`) without null/length checks.
+- Optional chaining: Stop check too early (e.g. `user?.address.street` still crashes if `address` is null).
+- This context: Callback bindings in classes.
 
-## Rules
+### 5. Async & Concurrency
+- Race conditions: Shared mutable states, parallel filesystem accesses without coordination.
+- Missing `await`: Promise ignored, silent errors.
+- Leaks: File/DB/network connections not closed in error paths.
 
-- Only report things that **will break or produce incorrect results**
-- Do NOT report: style, naming, formatting, performance suggestions, missing tests/docs
-- Do NOT report: "consider using X instead of Y"
-- If uncertain whether something is a real bug, investigate before reporting
+### 6. CSS & Styling
+- HSL variables: Raw HSL components (`0 0% 100%`) instead of functional format (`hsl(0 0% 100%)`) fail in Tailwind v4 (unlike v3).
+- Inline themes: Circular references, selector mismatch (class vs data-theme).
 
-## Fallow Integration
+### 7. Placeholder & Stub Code
+- Unused declarations/files/dependencies, TODO comments, empty catch blocks.
 
-For JS/TS projects, run the `fallow` static analysis tool before manual review. Fallow provides deterministic **static analysis and code improvement** — it surfaces dead code (unused exports/files/dependencies), circular dependencies, complexity hotspots, duplication, and architecture boundary violations, auto-applies safe fixes, and resolves mechanical issues deterministically so the manual review can focus on semantic bugs.
+---
 
-> **Note:** Fallow is not a TypeScript type-checker or ESLint-style linter. For type errors run `tsc --noEmit` (or the project's type-check command); for lint run the project's configured linter. Fallow complements those by catching dead code, complexity, duplication, and structural issues.
+## 3. Language-Specific Pitfalls
 
-### When to run
+- **Python**: Hallucinated library methods (pandas, numpy, requests), sync/asyncio confusion, mutable default arguments (`def f(x=[])`), silent indentation drops.
+- **JS/TS**: Backend (Node) vs Frontend (Browser) API mix-ups, `any` abuse, type-only import mismatches, barrel file false positives (exported but unused in production, used in tests/libraries).
+- **C++**: Raw vs smart pointer mix-ups, missing standard library header `#include`, uninitialized variables, buffer overflows.
+- **Rust**: Borrow checker lifetime overcomplication, `unwrap()` on `None`/`Err`, locking across `.await` yield points.
+- **Java / .NET**: Hallucinated annotations/attributes, LINQ N+1 queries, Entity Framework model snapshot drift / missing migrations (check model changes under `Entities/` against `Migrations/`).
+- **Go**: WaitGroup/Channel deadlocks, unexported struct fields in JSON, defer in loop, map concurrent access.
+- **PHP**: Loose type comparisons (`==` vs `===`), array vs object access, key undefined.
 
-Run the fallow pre-check when the project contains a `package.json`, `tsconfig.json`, or `.ts`/`.js` files (JS/TS project detection). This is mandatory for all TypeScript and JavaScript projects.
+---
 
-Fallow must be installed **globally**. If `fallow --version` fails, install it first:
+## 4. Fallow Finding Mapping & Fixes
 
-```bash
-npm install -g fallow
+| Fallow Type | Checklist Category | Auto-Fix Action |
+|---|---|---|
+| `unused_exports` | Placeholder & Stub | Remove `export` (if used locally) or entire declaration. |
+| `unused_files` | Placeholder & Stub | Delete file (check dynamic imports first). |
+| `unused_dependencies` | Placeholder & Stub | Remove dependency from `package.json`. |
+| `circular_dependencies`| Cross-Boundary | Defer to manual review (causes init bugs). |
+| `complexity`/`duplication` | Logic Bugs | Defer to manual review. |
+
+---
+
+## 5. Output Format
+
+Include `## Review Summary` header (only if JS/TS project):
+```
+## Review Summary
+- **Manual review bugs found**: N
+- **Fallow auto-fixed**: N findings (staged files only)
+- **Fallow non-auto-fixable**: N findings
+- **Fallow verdict**: pass / fail
 ```
 
-A global install makes `fallow` available in every project without adding a per-project `devDependency` or going through `npx`. After installing, proceed with the audit.
-
-### How to run
-
-1. **Run the audit**: `fallow audit --format json --quiet`
-2. **Get staged files**: `git diff --staged --name-only`
-3. **Apply auto-fixes to staged files only** — see [FALLOW-MAPPING.md](FALLOW-MAPPING.md) for fix types and the staged/unstaged filtering logic
-4. **Re-run audit** to verify fixes: `fallow audit --format json --quiet`
-5. **Collect non-auto-fixable findings** (and unstaged auto-fixable findings) for the manual review report
-
-### Edge cases
-
-- **Audit JSON parse error**: Log a warning, skip fallow, proceed with manual review only
-- **No staged files**: Treat all findings as report-only (no modifications)
-- **Fallow not installed**: Install globally via `npm install -g fallow`, then run the audit
+Format individual findings (add `[fallow]` tag for fallow-sourced bugs):
+```
+## Bug #1
+- **File**: <path>:<line>
+- **Category**: <category>
+- **What's wrong**: <description>
+- **Runtime effect**: <effect>
+- **Fix**: <code>
+```
